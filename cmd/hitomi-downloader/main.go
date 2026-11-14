@@ -33,6 +33,7 @@ func run() error {
 	proxy := flag.String("proxy", "", "Proxy URL；direct 禁用 Proxy；默认使用环境变量")
 	taskConc := flag.Int("task-concurrency", 0, "同时处理的任务数（覆盖已保存设置，默认 2）")
 	pageConc := flag.Int("page-concurrency", 0, "每个任务的并发文件数（覆盖已保存设置，默认 4）")
+	lan := flag.Bool("lan", false, "允许同一局域网的手机打开只读的阅读页（/reader）；默认只监听本机")
 	noOpen := flag.Bool("no-open", false, "不自动打开浏览器")
 	flag.Parse()
 	statePath, e := filepath.Abs(*state)
@@ -74,13 +75,28 @@ func run() error {
 		return e
 	}
 	app := server.New(client, manager, statePath)
-	listener, e := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *port))
+	bind := "127.0.0.1"
+	if *lan {
+		bind = "0.0.0.0"
+	}
+	listener, e := net.Listen("tcp", fmt.Sprintf("%s:%d", bind, *port))
 	if e != nil {
 		return e
 	}
-	url := "http://" + listener.Addr().String() + "/?token=" + app.Token
+	app.LAN = *lan
+	app.Addr = listener.Addr().String()
+	listenPort := listener.Addr().(*net.TCPAddr).Port
+	url := fmt.Sprintf("http://127.0.0.1:%d/?token=%s", listenPort, app.Token)
 	fmt.Println("Hitomi Local:", url)
 	fmt.Println("下载目录:", manager.Root())
+	if *lan {
+		fmt.Println("手机阅读（只读，需在同一局域网）：")
+		for _, link := range app.ReaderLinks() {
+			fmt.Println("  ", link)
+		}
+	} else {
+		fmt.Println("手机阅读：以 --lan 启动后，可在 GUI 的“设置”中获取手机链接")
+	}
 	if !*noOpen {
 		var cmd *exec.Cmd
 		switch runtime.GOOS {
@@ -123,11 +139,12 @@ func serve(ctx context.Context, listener net.Listener, app *server.Server) error
 	// HTTP の排出待ちと並行して worker を停止し、進捗の保存完了を待つ。
 	downloadsDone := make(chan struct{})
 	go func() { app.Downloads.Close(); close(downloadsDone) }()
-	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdown, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if e := srv.Shutdown(shutdown); e != nil {
+		// ブラウザが先行して開いた接続（まだリクエストのない接続）は、Shutdown では 5 秒間アイドル扱いにならず待たされる。
+		// 進行中の処理はキャンセル済みで、進捗の保存は下で待つため、残りの接続は強制的に閉じてよい。
 		_ = srv.Close()
-		return fmt.Errorf("等待 HTTP 连接关闭失败：%w", e)
 	}
 	<-downloadsDone
 	return nil

@@ -96,6 +96,10 @@ test("AppShell 导航和停止后的操作状态", async ({ page }) => {
       await route.fulfill({ status: 404 });
       return;
     }
+    if (path === "/api/v1/mobile-link") {
+      await route.fulfill({ json: { lan: false, urls: [], localUrl: "http://127.0.0.1:1/reader?token=x" } });
+      return;
+    }
     if (path.endsWith("/related")) {
       await route.fulfill({ json: { items: [] } });
       return;

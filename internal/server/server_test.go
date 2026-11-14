@@ -35,6 +35,7 @@ func setup(t *testing.T) *Server {
 }
 func call(s *Server, method, path, body, origin string, authenticated bool) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, "http://127.0.0.1:8080"+path, strings.NewReader(body))
+	r.RemoteAddr = "127.0.0.1:50000" // 既定ではローカルからの接続とみなす
 	if authenticated {
 		r.AddCookie(&http.Cookie{Name: "hitomi_session", Value: s.Token})
 	}

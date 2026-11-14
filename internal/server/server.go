@@ -38,7 +38,10 @@ type searchSession struct {
 type Server struct {
 	Client       *hitomi.Client
 	Downloads    *download.Manager
-	Token        string
+	Token        string // 管理用（ローカル専用）
+	ReaderToken  string // 閲覧専用
+	LAN          bool   // LAN の他の端末からの閲覧を許可する
+	Addr         string // 実際に待ち受けているアドレス（host:port）
 	StateDir     string
 	mu           sync.Mutex
 	sessions     map[string]searchSession
@@ -52,7 +55,7 @@ func New(c *hitomi.Client, m *download.Manager, state string) *Server {
 	if _, e := rand.Read(b); e != nil {
 		panic(e)
 	}
-	return &Server{Client: c, Downloads: m, Token: hex.EncodeToString(b), StateDir: state, sessions: map[string]searchSession{}, shutdown: make(chan struct{})}
+	return &Server{Client: c, Downloads: m, Token: hex.EncodeToString(b), ReaderToken: loadReaderToken(state), StateDir: state, sessions: map[string]searchSession{}, shutdown: make(chan struct{})}
 }
 
 // currentConfig は実際に適用されている設定（並行数は 0 にならない）を返す。
@@ -389,33 +392,62 @@ func (s *Server) Handler() http.Handler {
 	assets, _ := fs.Sub(web.Assets, "dist")
 	files := http.FileServer(http.FS(assets))
 	mux.Handle("/", files)
+	s.registerReader(mux)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host, _, e := net.SplitHostPort(r.Host)
 		if e != nil {
 			host = r.Host
 		}
-		if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+		if !s.hostAllowed(host) {
 			http.Error(w, "invalid host", 403)
 			return
 		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'")
+		local := isLoopbackAddr(r.RemoteAddr)
+		match := func(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
 		if token := r.URL.Query().Get("token"); token != "" {
-			if subtle.ConstantTimeCompare([]byte(token), []byte(s.Token)) != 1 {
+			switch {
+			case local && match(token, s.Token):
+				http.SetCookie(w, &http.Cookie{Name: "hitomi_session", Value: s.Token, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
+				http.Redirect(w, r, "/", http.StatusSeeOther)
+			case match(token, s.ReaderToken):
+				http.SetCookie(w, s.readerCookie())
+				http.Redirect(w, r, "/reader", http.StatusSeeOther)
+			default:
 				http.Error(w, "invalid token", 403)
-				return
 			}
-			http.SetCookie(w, &http.Cookie{Name: "hitomi_session", Value: s.Token, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
-			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
-		if strings.HasPrefix(r.URL.Path, "/api/") {
-			cookie, e := r.Cookie("hitomi_session")
-			if e != nil || subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(s.Token)) != 1 {
-				http.Error(w, "请使用 CLI 打印的启动链接打开界面", 401)
+		cookieIs := func(name, want string) bool {
+			c, e := r.Cookie(name)
+			return e == nil && match(c.Value, want)
+		}
+		// 管理権限はローカルからの接続にだけ与える。他の端末は閲覧専用トークンでのみ閲覧 API を使える。
+		admin := local && cookieIs("hitomi_session", s.Token)
+		reader := admin || cookieIs(readerCookie, s.ReaderToken)
+		path := r.URL.Path
+		switch {
+		case strings.HasPrefix(path, "/api/v1/reader/"):
+			if !reader {
+				http.Error(w, "请使用手机阅读链接打开", 401)
 				return
 			}
+		case strings.HasPrefix(path, "/api/"):
+			if !admin {
+				if local {
+					http.Error(w, "请使用 CLI 打印的启动链接打开界面", 401)
+				} else {
+					http.Error(w, "forbidden", 403)
+				}
+				return
+			}
+		case !local && !readerStaticPath(path):
+			http.Redirect(w, r, "/reader", http.StatusSeeOther)
+			return
+		}
+		if strings.HasPrefix(path, "/api/") {
 			if origin := r.Header.Get("Origin"); origin != "" {
 				u, e := url.Parse(origin)
 				if e != nil || u.Host != r.Host {

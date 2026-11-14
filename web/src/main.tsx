@@ -37,6 +37,7 @@ import {
 import { api, Settings } from "./api";
 import { report } from "./common";
 import { DownloadedPane } from "./DownloadedPane";
+import { MobileLink } from "./MobileLink";
 import { QueuePane } from "./QueuePane";
 import { SearchPane } from "./SearchPane";
 import { isActive } from "./common";
@@ -348,6 +349,7 @@ function App() {
           <Text size="xs" c="dimmed">
             对 Hitomi 的请求仍有全局间隔限制，并发数调得过高不会成比例提速，也可能触发限流。
           </Text>
+          <MobileLink />
           <Alert
             color="teal"
             p="xs"

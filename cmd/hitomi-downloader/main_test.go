@@ -33,10 +33,17 @@ func (l *pipeListener) Accept() (net.Conn, error) {
 }
 func (l *pipeListener) Close() error   { l.once.Do(func() { close(l.closed) }); return nil }
 func (l *pipeListener) Addr() net.Addr { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080} }
+
+// net.Pipe の接続はアドレスが IP ではないため、ローカルからの接続として扱われるよう回環アドレスを報告する。
+type loopbackConn struct{ net.Conn }
+
+func (loopbackConn) RemoteAddr() net.Addr {
+	return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 50000}
+}
 func (l *pipeListener) dial(ctx context.Context, _, _ string) (net.Conn, error) {
 	client, backend := net.Pipe()
 	select {
-	case l.conns <- backend:
+	case l.conns <- loopbackConn{backend}:
 		return client, nil
 	case <-ctx.Done():
 		client.Close()
@@ -120,5 +127,41 @@ func TestGracefulShutdownWithLiveSSE(t *testing.T) {
 				t.Fatal("accepted task after shutdown")
 			}
 		})
+	}
+}
+
+// ブラウザの先行接続（リクエストを送らない接続）が残っていても、終了処理が長く待たされず、正常終了する。
+func TestShutdownIgnoresConnectionsThatNeverSendARequest(t *testing.T) {
+	client, _ := hitomi.New("direct")
+	manager, e := download.New(client, t.TempDir(), t.TempDir())
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer manager.Close()
+	app := server.New(client, manager, t.TempDir())
+	listener := &pipeListener{conns: make(chan net.Conn), closed: make(chan struct{})}
+	defer listener.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- serve(ctx, listener, app) }()
+	idle, e := listener.dial(context.Background(), "", "")
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer idle.Close()
+	time.Sleep(50 * time.Millisecond) // サーバー側が接続を受け付けるのを待つ
+	start := time.Now()
+	cancel()
+	select {
+	case e := <-done:
+		if e != nil {
+			t.Fatalf("shutdown reported an error: %v", e)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("shutdown blocked by a connection without a request")
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Fatalf("shutdown took %v", time.Since(start))
 	}
 }
