@@ -17,6 +17,7 @@ import {
 import { useDebouncedValue } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
+  IconCloudDownload,
   IconFileImport,
   IconInfoCircle,
   IconRefresh,
@@ -141,6 +142,7 @@ export function DownloadedPane({
   const selectedEntries = Array.from(selected.values());
   const legacySelected = selectedEntries.filter((e) => e.legacy);
   const nativeSelected = selectedEntries.filter((e) => !e.legacy);
+  const updatable = selectedEntries.filter((e) => e.upstream === "changed");
   const taskOf = (entry: Entry) =>
     tasks.find(
       (t) =>
@@ -151,7 +153,7 @@ export function DownloadedPane({
   const filtered = !!query || tagFilters.length > 0 || kind !== "all";
 
   async function batch(
-    op: "migrate" | "repair",
+    op: "migrate" | "repair" | "update",
     values: Pick<Entry, "directory">[],
     skipped = 0,
   ) {
@@ -162,7 +164,11 @@ export function DownloadedPane({
       for (let offset = 0; offset < values.length; offset += 100) {
         setQueueProgress(`正在加入队列：${offset} / ${values.length}`);
         const part = await api<Batch>(
-          op === "migrate" ? "/library/migrate" : "/library/repair/batch",
+          op === "migrate"
+            ? "/library/migrate"
+            : op === "update"
+              ? "/library/update"
+              : "/library/repair/batch",
           {
             directories: values
               .slice(offset, offset + 100)
@@ -188,7 +194,12 @@ export function DownloadedPane({
       if (result.accepted.length) {
         notifications.show({
           color: "teal",
-          title: op === "migrate" ? "迁移已加入队列" : "验证已加入队列",
+          title:
+            op === "migrate"
+              ? "迁移已加入队列"
+              : op === "update"
+                ? "上游更新已加入队列"
+                : "验证已加入队列",
           message: `${result.accepted.length} 个作品${skipped ? `，跳过 ${skipped} 个已有活动任务的作品` : ""}${op === "migrate" ? "，仅处理现有文件，不重新下载" : ""}`,
         });
         setSelected(
@@ -200,7 +211,7 @@ export function DownloadedPane({
             ),
         );
         setRevision((v) => v + 1);
-        if (op === "repair") onQueued();
+        if (op !== "migrate") onQueued();
       }
     } catch (e) {
       report(e);
@@ -348,6 +359,7 @@ export function DownloadedPane({
               { value: "all", label: "全部作品" },
               { value: "legacy", label: "待迁移" },
               { value: "native", label: "已使用新 metadata" },
+              { value: "upstream", label: "上游有更新 / 已删除" },
             ]}
             w={150}
           />
@@ -392,6 +404,7 @@ export function DownloadedPane({
           <Button
             variant="light"
             leftSection={<IconShieldCheck size={14} />}
+            title="对比 Hitomi 信息并校验本地文件（每个作品请求一次 Hitomi）；上游有更新时只报告，不覆盖本地文件"
             disabled={
               scanning ||
               !data ||
@@ -488,6 +501,18 @@ export function DownloadedPane({
                     onClick={() => batch("repair", nativeSelected)}
                   >
                     验证所选（{nativeSelected.length}）
+                  </Button>
+                )}
+                {updatable.length > 0 && (
+                  <Button
+                    size="compact-xs"
+                    variant="light"
+                    color="blue"
+                    title="下载上游替换或新增的页面；被替换的旧页面保留在 superseded 目录"
+                    disabled={queueing}
+                    onClick={() => batch("update", updatable)}
+                  >
+                    应用上游更新（{updatable.length}）
                   </Button>
                 )}
               </>
@@ -613,6 +638,16 @@ export function DownloadedPane({
                       待迁移
                     </Badge>
                   )}
+                  {entry.upstream === "changed" && (
+                    <Badge size="xs" color="blue" variant="light">
+                      上游有更新
+                    </Badge>
+                  )}
+                  {entry.upstream === "deleted" && (
+                    <Badge size="xs" color="gray" variant="light">
+                      上游已删除
+                    </Badge>
+                  )}
                   {running && (
                     <Badge size="xs" variant="light">
                       {running.operation === "migrate" ? "迁移中" : "处理中"}
@@ -637,28 +672,46 @@ export function DownloadedPane({
                   {entry.missing > 0 && (
                     <span className="warn"> · {entry.missing} 页需要验证并补全</span>
                   )}
+                  {entry.upstream === "changed" && entry.upstreamNote && (
+                    <span className="info"> · 上游：{entry.upstreamNote}</span>
+                  )}
                   {entry.fallbacks > 0 && (
                     <span className="warn"> · {entry.fallbacks} 页使用衍生格式</span>
                   )}
                 </div>
                 <EntryTags tags={entry.tags || []} onSelect={addTagFilter} />
               </div>
-              <Tooltip label={entry.legacy ? "迁移" : "验证并补全"}>
-                <ActionIcon
-                  variant="light"
-                  aria-label={entry.legacy ? "迁移" : "验证并补全"}
-                  disabled={busy(entry) || queueing}
-                  onClick={() =>
-                    batch(entry.legacy ? "migrate" : "repair", [entry])
-                  }
-                >
-                  {entry.legacy ? (
-                    <IconFileImport size={16} />
-                  ) : (
-                    <IconShieldCheck size={16} />
-                  )}
-                </ActionIcon>
-              </Tooltip>
+              <div className="d-actions">
+                {entry.upstream === "changed" && (
+                  <Tooltip label="应用上游更新（旧页面保留在 superseded）">
+                    <ActionIcon
+                      variant="light"
+                      color="blue"
+                      aria-label="应用上游更新"
+                      disabled={busy(entry) || queueing}
+                      onClick={() => batch("update", [entry])}
+                    >
+                      <IconCloudDownload size={16} />
+                    </ActionIcon>
+                  </Tooltip>
+                )}
+                <Tooltip label={entry.legacy ? "迁移" : "验证并补全"}>
+                  <ActionIcon
+                    variant="light"
+                    aria-label={entry.legacy ? "迁移" : "验证并补全"}
+                    disabled={busy(entry) || queueing}
+                    onClick={() =>
+                      batch(entry.legacy ? "migrate" : "repair", [entry])
+                    }
+                  >
+                    {entry.legacy ? (
+                      <IconFileImport size={16} />
+                    ) : (
+                      <IconShieldCheck size={16} />
+                    )}
+                  </ActionIcon>
+                </Tooltip>
+              </div>
             </Paper>
           );
         })}

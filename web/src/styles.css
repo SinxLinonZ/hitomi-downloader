@@ -333,3 +333,11 @@ body {
 .d-title:hover .main-title {
   color: var(--mantine-color-teal-4);
 }
+.d-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.d-meta .info {
+  color: var(--mantine-color-blue-4);
+}

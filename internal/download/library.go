@@ -116,6 +116,9 @@ func entryFrom(dir string, meta Metadata, g hitomi.Gallery) Entry {
 		}
 	}
 	sort.Strings(e.Formats)
+	if u := meta.Upstream; u != nil && (u.Status == "changed" || u.Status == "deleted") {
+		e.Upstream, e.UpstreamNote = u.Status, u.Summary()
+	}
 	if !e.Legacy {
 		e.Missing = max(0, e.Pages-len(indices))
 	}
@@ -289,7 +292,7 @@ func (m *Manager) Library(page, size int, q, kind string, tags ...string) (Libra
 		if entry.Legacy {
 			out.LegacyTotal++
 		}
-		if kind == "legacy" && !entry.Legacy || kind == "native" && entry.Legacy {
+		if kind == "legacy" && !entry.Legacy || kind == "native" && entry.Legacy || kind == "upstream" && entry.Upstream == "" {
 			continue
 		}
 		if !matchesQuery(entry, q) {

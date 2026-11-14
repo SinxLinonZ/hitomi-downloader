@@ -114,10 +114,13 @@ func TestMigratePreservesImagesAndCreatesOfflineManifest(t *testing.T) {
 	if e = m.Migrate(dir); e == nil {
 		t.Fatal("repeated migration accepted")
 	}
+	// 验证会尝试联网对比上游；离线时仍应完成本地校验，并提示无法判断上游状态。
+	m.client.Backoff = time.Millisecond
+	m.client.HTTP.Transport = rt(func(r *http.Request) (*http.Response, error) { return nil, fmt.Errorf("offline") })
 	if e = m.Repair(dir); e != nil {
 		t.Fatal(e)
 	}
-	if task = await(t, m, 123); task.State != "completed" {
+	if task = await(t, m, 123); task.State != "completed" || !strings.Contains(task.Warning, "仅完成本地校验") {
 		t.Fatalf("offline verification failed: %+v", task)
 	}
 	// 初回の検証で基線が確定し、以降は内容の変化を検出できる。

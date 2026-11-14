@@ -467,3 +467,88 @@ test("队列支持全部暂停、全部开始、隐藏和移除已完成任务",
   expect(actions).toEqual(["pause-all", "resume-all", "clear-completed"]);
   expect(errors).toEqual([]);
 });
+
+test("上游有更新的作品显示提示，并可应用上游更新", async ({ page }) => {
+  const root = "/Users/example/Downloads/Hitomi";
+  const dir = `${root}/42 - Updated`;
+  const updates: string[][] = [];
+  const kinds: string[] = [];
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.route("http://hitomi.test/**", async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    if (path === "/api/v1/events") return;
+    if (path === "/api/v1/settings") {
+      await route.fulfill({ json: { downloadDir: root } });
+      return;
+    }
+    if (path === "/api/v1/library") {
+      kinds.push(url.searchParams.get("kind") || "");
+      await route.fulfill({
+        json: {
+          entries: [
+            {
+              id: 42,
+              title: "上游已更新的作品",
+              directory: dir,
+              pages: 3,
+              legacy: false,
+              artists: [],
+              tags: [],
+              language: "japanese",
+              type: "manga",
+              formats: ["webp"],
+              fallbacks: 0,
+              missing: 0,
+              upstream: "changed",
+              upstreamNote: "替换 1 页，新增 1 页",
+            },
+          ],
+          tags: [],
+          total: 1,
+          legacyTotal: 0,
+          page: 1,
+          pageSize: 50,
+          scan: {
+            root,
+            state: "completed",
+            visited: 2,
+            found: 1,
+            current: root,
+            warnings: [],
+            warningCount: 0,
+          },
+        },
+      });
+      return;
+    }
+    if (path === "/api/v1/library/update") {
+      updates.push(route.request().postDataJSON().directories);
+      await route.fulfill({ json: { accepted: [dir], errors: {} } });
+      return;
+    }
+    if (path === "/api/v1/library/cover" || path === "/favicon.ico") {
+      await route.fulfill({ status: 404 });
+      return;
+    }
+    const asset = resolve("dist", path === "/" ? "index.html" : path.slice(1));
+    await route.fulfill({
+      contentType: asset.endsWith(".js")
+        ? "application/javascript"
+        : asset.endsWith(".css")
+          ? "text/css"
+          : "text/html",
+      body: await readFile(asset),
+    });
+  });
+  await page.goto("http://hitomi.test/");
+  await page.getByRole("button", { name: "已下载", exact: true }).click();
+  const row = page.locator(".downloaded-row");
+  await expect(row.getByText("上游有更新", { exact: true })).toBeVisible();
+  await expect(row.getByText(/替换 1 页，新增 1 页/)).toBeVisible();
+  await row.getByRole("button", { name: "应用上游更新" }).click();
+  await expect(page.getByText("上游更新已加入队列")).toBeVisible();
+  expect(updates).toEqual([[dir]]);
+  expect(errors).toEqual([]);
+});

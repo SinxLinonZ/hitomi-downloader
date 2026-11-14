@@ -368,3 +368,17 @@ func TestQueueBatchEndpointsRequireSessionAndRemoveOnlyTaskRecords(t *testing.T)
 		t.Fatal("task was not removed")
 	}
 }
+
+func TestLibraryUpdateEndpointRequiresSessionAndRejectsOutsideDirectories(t *testing.T) {
+	s := setup(t)
+	if w := call(s, "POST", "/api/v1/library/update", `{"directories":["/tmp"]}`, "", false); w.Code != 401 {
+		t.Fatal(w.Code)
+	}
+	w := call(s, "POST", "/api/v1/library/update", `{"directories":["`+t.TempDir()+`"]}`, "", true)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"accepted":[]`) {
+		t.Fatal(w.Code, w.Body)
+	}
+	if w = call(s, "POST", "/api/v1/library/update", `{"directories":[]}`, "", true); w.Code == 200 {
+		t.Fatal("accepted an empty selection")
+	}
+}

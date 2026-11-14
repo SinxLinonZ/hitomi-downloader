@@ -31,7 +31,13 @@ export const taskTitle = (t: Task) =>
   t.title || basename(t.directory) || `作品 #${t.id}`;
 
 export const operationLabel = (op: string) =>
-  op === "repair" ? "验证并补全" : op === "migrate" ? "迁移" : "下载";
+  op === "repair"
+    ? "验证并补全"
+    : op === "migrate"
+      ? "迁移"
+      : op === "update"
+        ? "应用上游更新"
+        : "下载";
 
 // 一覧の表示切り替えで使う、状態のグルーピング。
 export const isActive = (t: Task) => ["running", "queued"].includes(t.state);

@@ -261,6 +261,32 @@ func (s *Server) Handler() http.Handler {
 		}
 		jsonOut(w, map[string]any{"accepted": accepted, "errors": problems})
 	})
+	mux.HandleFunc("POST /api/v1/library/update", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Directories []string `json:"directories"`
+		}
+		if e := decode(w, r, &body); e != nil {
+			fail(w, e)
+			return
+		}
+		if len(body.Directories) == 0 || len(body.Directories) > 200 {
+			fail(w, fmt.Errorf("请选择 1 至 200 个作品"))
+			return
+		}
+		accepted := []string{}
+		problems := map[string]string{}
+		for _, dir := range body.Directories {
+			if r.Context().Err() != nil {
+				return
+			}
+			if e := s.Downloads.Update(dir); e != nil {
+				problems[dir] = e.Error()
+			} else {
+				accepted = append(accepted, dir)
+			}
+		}
+		jsonOut(w, map[string]any{"accepted": accepted, "errors": problems})
+	})
 	mux.HandleFunc("GET /api/v1/settings", func(w http.ResponseWriter, r *http.Request) { jsonOut(w, Config{s.Downloads.Root()}) })
 	mux.HandleFunc("PUT /api/v1/settings", func(w http.ResponseWriter, r *http.Request) {
 		s.settingsMu.Lock()

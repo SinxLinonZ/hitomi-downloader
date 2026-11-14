@@ -41,6 +41,7 @@ type Metadata struct {
 	Pages         []Page          `json:"pages"`
 	UpdatedAt     time.Time       `json:"updatedAt"`
 	QualityPolicy string          `json:"qualityPolicy"`
+	Upstream      *Upstream       `json:"upstream,omitempty"`
 }
 type Task struct {
 	Warning   string         `json:"warning,omitempty"`
@@ -66,6 +67,8 @@ type Entry struct {
 	Missing       int       `json:"missing"`
 	Formats       []string  `json:"formats"`
 	Fallbacks     int       `json:"fallbacks"`
+	Upstream      string    `json:"upstream,omitempty"`
+	UpstreamNote  string    `json:"upstreamNote,omitempty"`
 	ID            int       `json:"id"`
 	Title         string    `json:"title"`
 	Directory     string    `json:"directory"`
@@ -85,6 +88,8 @@ type Manager struct {
 	wg      sync.WaitGroup
 	closing bool
 	library libraryIndex
+	// 直近で Hitomi への接続に失敗した時刻（検証の一括実行で無駄な待機を避ける）。
+	upstreamDown time.Time
 }
 
 func AtomicJSON(path string, v any) error {
@@ -239,7 +244,7 @@ func (m *Manager) startLocked(id int, dir, op string) error {
 		return fmt.Errorf("请切换回该任务的原下载目录再继续")
 	}
 	t.Root = m.root
-	if t.State == "completed" && op != "repair" && op != "migrate" {
+	if t.State == "completed" && op != "repair" && op != "migrate" && op != "update" {
 		return fmt.Errorf("任务已完成，请从本地库验证")
 	}
 	if dir != "" {
@@ -486,7 +491,49 @@ func (m *Manager) process(ctx context.Context, id int) error {
 	if e = os.MkdirAll(dir, 0755); e != nil {
 		return e
 	}
-	if e = m.update(id, func(t *Task) { t.Title = g.Title; t.Total = len(g.Files) }); e != nil {
+	// 検証・更新では Hitomi の最新情報と比較し、「ローカルの破損」と「上流の更新」を区別する。
+	var rs remoteState
+	if task.Operation == "repair" || task.Operation == "update" {
+		if rs, e = m.checkUpstream(ctx, id, g); e != nil {
+			return e
+		}
+	}
+	if task.Operation == "update" {
+		if !rs.ok {
+			if rs.note == "" {
+				rs.note = "未知原因"
+			}
+			return fmt.Errorf("无法获取 Hitomi 上的最新信息，不能应用更新：%s", rs.note)
+		}
+		// 差し替え・削除された旧ページは退避してから、上流の gallery を正とする。
+		stamp := time.Now().Format("20060102-150405")
+		kept := []Page{}
+		for _, p := range meta.Pages {
+			if p.Index >= len(rs.gallery.Files) || p.SourceHash != rs.gallery.Files[p.Index].Hash {
+				if e = supersede(dir, p, stamp); e != nil {
+					return e
+				}
+				continue
+			}
+			kept = append(kept, p)
+		}
+		meta.Pages = kept
+		meta.Upstream = nil
+		g = rs.gallery
+		rs.changed = map[int]bool{}
+		rs.upstream = nil
+	} else if rs.upstream != nil {
+		meta.Upstream = rs.upstream
+	}
+	if e = m.update(id, func(t *Task) {
+		t.Title = g.Title
+		t.Total = len(g.Files)
+		if rs.note != "" {
+			t.Warning = rs.note
+		} else if rs.upstream != nil && rs.upstream.Status == "changed" {
+			t.Warning = "上游已更新（" + rs.upstream.Summary() + "）；本地文件未被覆盖，可在“已下载”中应用上游更新"
+		}
+	}); e != nil {
 		return e
 	}
 	meta.Schema = 1
@@ -512,6 +559,9 @@ func (m *Manager) process(ctx context.Context, id int) error {
 	if e = save(); e != nil {
 		return e
 	}
+	if task.Directory != "" {
+		m.refreshIndex(dir)
+	}
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 	for w := 0; w < 4; w++ {
@@ -523,6 +573,10 @@ func (m *Manager) process(ctx context.Context, id int) error {
 					return
 				}
 				f := g.Files[i]
+				// 上流の hash が同じなら、最新の形式情報（haswebp など）を使う。
+				if rs.ok && i < len(rs.gallery.Files) && rs.gallery.Files[i].Hash == f.Hash {
+					f = rs.gallery.Files[i]
+				}
 				mu.Lock()
 				p, exists := pages[i]
 				mu.Unlock()
@@ -540,6 +594,19 @@ func (m *Manager) process(ctx context.Context, id int) error {
 							mu.Unlock()
 						}
 					}
+				}
+				if !valid && (rs.changed[i] || rs.deleted) {
+					// 上流で差し替え・削除されたページは、旧版を再取得しない。
+					reason := "本地文件缺失或损坏，且上游已替换该页，请先应用上游更新"
+					if rs.deleted {
+						reason = "本地文件缺失或损坏，但上游已删除该作品，无法补全"
+					}
+					if err := m.update(id, func(t *Task) { t.Errors[i+1] = reason }); err != nil {
+						mu.Lock()
+						persistErr = err
+						mu.Unlock()
+					}
+					continue
 				}
 				if !valid {
 					p, e := m.fetch(ctx, dir, i, f)

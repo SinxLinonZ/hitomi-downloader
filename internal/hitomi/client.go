@@ -64,6 +64,8 @@ type Client struct {
 	routeMu   sync.Mutex
 	route     routing
 	versionMu sync.Mutex
+	// Backoff は再試行間隔の基準値。0 のときは 1 秒（テストでは短くする）。
+	Backoff   time.Duration
 	version   string
 	versionAt time.Time
 }
@@ -96,8 +98,19 @@ func wait(ctx context.Context, d time.Duration) error {
 		return nil
 	}
 }
+
+type attemptsKey struct{}
+
+// WithMaxAttempts は、この context で発行する要求の最大試行回数を指定する（既定は 4）。
+func WithMaxAttempts(ctx context.Context, n int) context.Context {
+	return context.WithValue(ctx, attemptsKey{}, n)
+}
 func (c *Client) request(ctx context.Context, u, ran string) (*http.Response, error) {
-	for attempt := 0; attempt < 4; attempt++ {
+	attempts := 4
+	if n, ok := ctx.Value(attemptsKey{}).(int); ok && n > 0 {
+		attempts = n
+	}
+	for attempt := 0; attempt < attempts; attempt++ {
 		c.mu.Lock()
 		now := time.Now()
 		at := c.next
@@ -124,7 +137,11 @@ func (c *Client) request(ctx context.Context, u, ran string) (*http.Response, er
 		}
 		retry := true
 		status := 0
-		delay := time.Duration(1<<attempt)*time.Second + time.Duration(rand.IntN(500))*time.Millisecond
+		base := c.Backoff
+		if base <= 0 {
+			base = time.Second
+		}
+		delay := time.Duration(1<<attempt)*base + rand.N(base/2+1)
 		if resp != nil {
 			status = resp.StatusCode
 			retry = status == 408 || status == 429 || status >= 500
@@ -146,11 +163,11 @@ func (c *Client) request(ctx context.Context, u, ran string) (*http.Response, er
 		if status == 404 {
 			code = "NOT_FOUND"
 		}
-		failure := &Error{code, fmt.Sprintf("上游请求失败（HTTP %d，尝试 %d/4）", status, attempt+1), retry, status}
+		failure := &Error{code, fmt.Sprintf("上游请求失败（HTTP %d，尝试 %d/%d）", status, attempt+1, attempts), retry, status}
 		if e != nil {
 			failure.Message = "网络请求失败：" + e.Error()
 		}
-		if !retry || attempt == 3 {
+		if !retry || attempt == attempts-1 {
 			return nil, failure
 		}
 		if delay > 60*time.Second {

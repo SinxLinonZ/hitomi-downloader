@@ -60,6 +60,8 @@ export type Entry = {
   missing: number;
   formats: string[];
   fallbacks: number;
+  upstream?: "changed" | "deleted";
+  upstreamNote?: string;
   id: number;
   title: string;
   directory: string;
