@@ -2,7 +2,7 @@ package download
 
 import (
 	"context"
-	"fmt"
+	"hitomi-downloader/internal/i18n"
 	"os"
 	"path/filepath"
 	"sort"
@@ -45,12 +45,12 @@ func awaitSettled(ctx context.Context, done <-chan struct{}) error {
 func (m *Manager) ControlAll(ctx context.Context, action string) (TaskBatchResult, error) {
 	result := newTaskBatchResult()
 	if action != "pause" && action != "resume" {
-		return result, fmt.Errorf("无效批量操作")
+		return result, i18n.Errorf("无效批量操作")
 	}
 	m.mu.Lock()
 	if m.closing {
 		m.mu.Unlock()
-		return result, fmt.Errorf("服务正在停止")
+		return result, i18n.Errorf("服务正在停止")
 	}
 	ids := m.taskIDs()
 	m.mu.Unlock()
@@ -61,7 +61,7 @@ func (m *Manager) ControlAll(ctx context.Context, action string) (TaskBatchResul
 		m.mu.Lock()
 		if m.closing {
 			m.mu.Unlock()
-			return result, fmt.Errorf("服务正在停止")
+			return result, i18n.Errorf("服务正在停止")
 		}
 		task := m.tasks[id]
 		if task == nil {
@@ -125,7 +125,7 @@ func (m *Manager) RemoveCompleted(ctx context.Context) (TaskBatchResult, error) 
 	m.mu.Lock()
 	if m.closing {
 		m.mu.Unlock()
-		return result, fmt.Errorf("服务正在停止")
+		return result, i18n.Errorf("服务正在停止")
 	}
 	ids := m.taskIDs()
 	m.mu.Unlock()
@@ -152,7 +152,7 @@ func (m *Manager) RemoveCompleted(ctx context.Context) (TaskBatchResult, error) 
 		}
 		if m.closing {
 			m.mu.Unlock()
-			return result, fmt.Errorf("服务正在停止")
+			return result, i18n.Errorf("服务正在停止")
 		}
 		current := m.tasks[id]
 		if current != task || current.State != "completed" || m.cancel[id] != nil {

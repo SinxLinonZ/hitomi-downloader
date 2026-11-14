@@ -3,7 +3,7 @@ package download
 import (
 	"context"
 	"errors"
-	"fmt"
+	"hitomi-downloader/internal/i18n"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,19 +28,19 @@ func (u *Upstream) Summary() string {
 		return ""
 	}
 	if u.Status == "deleted" {
-		return "上游已删除"
+		return i18n.T("上游已删除")
 	}
 	parts := []string{}
 	if len(u.Changed) > 0 {
-		parts = append(parts, fmt.Sprintf("替换 %d 页", len(u.Changed)))
+		parts = append(parts, i18n.Sprintf("替换 %d 页", len(u.Changed)))
 	}
 	if len(u.Added) > 0 {
-		parts = append(parts, fmt.Sprintf("新增 %d 页", len(u.Added)))
+		parts = append(parts, i18n.Sprintf("新增 %d 页", len(u.Added)))
 	}
 	if len(u.Removed) > 0 {
-		parts = append(parts, fmt.Sprintf("删除 %d 页", len(u.Removed)))
+		parts = append(parts, i18n.Sprintf("删除 %d 页", len(u.Removed)))
 	}
-	return strings.Join(parts, "，")
+	return strings.Join(parts, i18n.T("，"))
 }
 
 // diffFiles は、ローカルが記録している gallery と上流の gallery を hash で比較する。
@@ -78,7 +78,7 @@ func (m *Manager) checkUpstream(ctx context.Context, id int, local hitomi.Galler
 	down := time.Since(m.upstreamDown) < time.Minute
 	m.mu.Unlock()
 	if down {
-		rs.note = "最近一次连接 Hitomi 失败，已跳过联网对比，仅完成本地校验"
+		rs.note = i18n.T("最近一次连接 Hitomi 失败，已跳过联网对比，仅完成本地校验")
 		return rs, nil
 	}
 	// 検証での照会は 2 回までに抑える（接続できない環境で長く待たせない）。
@@ -101,15 +101,15 @@ func (m *Manager) checkUpstream(ctx context.Context, id int, local hitomi.Galler
 		rs.upstream = u
 	case errors.As(e, &he) && he.Code == "NOT_FOUND":
 		rs.deleted = true
-		rs.upstream = &Upstream{Status: "deleted", CheckedAt: time.Now(), Message: "Hitomi 上已找不到该作品"}
-		rs.note = "Hitomi 上已找不到该作品，本地内容保持不变"
+		rs.upstream = &Upstream{Status: "deleted", CheckedAt: time.Now(), Message: i18n.T("Hitomi 上已找不到该作品")}
+		rs.note = i18n.T("Hitomi 上已找不到该作品，本地内容保持不变")
 	default:
 		if he == nil || he.Code == "UPSTREAM_NETWORK" {
 			m.mu.Lock()
 			m.upstreamDown = time.Now()
 			m.mu.Unlock()
 		}
-		rs.note = "未能获取 Hitomi 信息（" + e.Error() + "），仅完成本地校验，无法判断上游是否有更新"
+		rs.note = i18n.Sprintf("未能获取 Hitomi 信息（%s），仅完成本地校验，无法判断上游是否有更新", e.Error())
 	}
 	return rs, nil
 }
@@ -117,7 +117,7 @@ func (m *Manager) checkUpstream(ctx context.Context, id int, local hitomi.Galler
 // supersede は上流で差し替え・削除された旧ページを superseded/<stamp>/ へ退避する。上書きや削除はしない。
 func supersede(dir string, p Page, stamp string) error {
 	if filepath.Base(p.Name) != p.Name {
-		return fmt.Errorf("无效页面记录")
+		return i18n.Errorf("无效页面记录")
 	}
 	src := filepath.Join(dir, p.Name)
 	if _, e := os.Lstat(src); errors.Is(e, os.ErrNotExist) {
@@ -142,7 +142,7 @@ func (m *Manager) Update(dir string) error {
 		return e
 	}
 	if meta.Legacy {
-		return fmt.Errorf("旧 metadata 需要先手动迁移，再应用上游更新")
+		return i18n.Errorf("旧 metadata 需要先手动迁移，再应用上游更新")
 	}
 	return m.Start(g.Number(), dir, "update")
 }

@@ -2,6 +2,7 @@ package download
 
 import (
 	"fmt"
+	"hitomi-downloader/internal/i18n"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,7 +92,12 @@ var readerCache = struct {
 }{items: map[string]readerWork{}}
 
 // ErrScanning は、走査中でまだ作品が見つからないことを表す（待てば見つかる可能性がある）。
-var ErrScanning = fmt.Errorf("目录扫描中，请稍后再试")
+var ErrScanning error = scanningError{}
+
+// 言語切り替えに追従するよう、メッセージは Error() の時点で翻訳する。
+type scanningError struct{}
+
+func (scanningError) Error() string { return i18n.T("目录扫描中，请稍后再试") }
 
 func (m *Manager) readerWork(id int) (readerWork, error) {
 	if e := m.StartScan(false); e != nil {

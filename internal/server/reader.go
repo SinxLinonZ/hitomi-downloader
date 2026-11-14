@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hitomi-downloader/internal/i18n"
 	"net"
 	"net/http"
 	"os"
@@ -92,7 +93,7 @@ func readerError(w http.ResponseWriter, e error) {
 	case errors.Is(e, download.ErrScanning):
 		failStatus(w, http.StatusServiceUnavailable, "SCANNING", e.Error())
 	case errors.Is(e, os.ErrNotExist):
-		failStatus(w, http.StatusNotFound, "NOT_FOUND", "找不到该作品或页面")
+		failStatus(w, http.StatusNotFound, "NOT_FOUND", i18n.T("找不到该作品或页面"))
 	default:
 		fail(w, e)
 	}
@@ -138,7 +139,7 @@ func (s *Server) registerReader(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/reader/works/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id, e := strconv.Atoi(r.PathValue("id"))
 		if e != nil || id <= 0 {
-			failStatus(w, http.StatusBadRequest, "BAD_REQUEST", "无效 ID")
+			failStatus(w, http.StatusBadRequest, "BAD_REQUEST", i18n.T("无效 ID"))
 			return
 		}
 		work, e := s.Downloads.ReaderWork(id)
@@ -151,7 +152,7 @@ func (s *Server) registerReader(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/reader/works/{id}/cover", func(w http.ResponseWriter, r *http.Request) {
 		id, e := strconv.Atoi(r.PathValue("id"))
 		if e != nil || id <= 0 {
-			failStatus(w, http.StatusBadRequest, "BAD_REQUEST", "无效 ID")
+			failStatus(w, http.StatusBadRequest, "BAD_REQUEST", i18n.T("无效 ID"))
 			return
 		}
 		// 検索画面で取得済みの小さなサムネイルがあれば優先し、なければ先頭ページを使う。
@@ -171,7 +172,7 @@ func (s *Server) registerReader(mux *http.ServeMux) {
 		id, e1 := strconv.Atoi(r.PathValue("id"))
 		n, e2 := strconv.Atoi(r.PathValue("n"))
 		if e1 != nil || e2 != nil || id <= 0 {
-			failStatus(w, http.StatusBadRequest, "BAD_REQUEST", "无效参数")
+			failStatus(w, http.StatusBadRequest, "BAD_REQUEST", i18n.T("无效参数"))
 			return
 		}
 		path, e := s.Downloads.ReaderPageFile(id, n)

@@ -18,6 +18,7 @@ import (
 
 	"hitomi-downloader/internal/download"
 	"hitomi-downloader/internal/hitomi"
+	"hitomi-downloader/internal/i18n"
 )
 
 type rt func(*http.Request) (*http.Response, error)
@@ -453,5 +454,37 @@ func TestDownloadedEndpointAndDuplicateDownloadRejected(t *testing.T) {
 	}
 	if len(s.Downloads.List()) != 0 {
 		t.Fatal("duplicate download created a task")
+	}
+}
+
+func TestLanguageSettingPersistsAndSwitchesMessages(t *testing.T) {
+	defer i18n.SetLang(i18n.ZH)
+	s := setup(t)
+	w := call(s, "GET", "/api/v1/settings", "", "", true)
+	var cfg Config
+	if e := json.Unmarshal(w.Body.Bytes(), &cfg); e != nil || cfg.EffectiveLanguage == "" {
+		t.Fatalf("%s %v", w.Body, e)
+	}
+	body := `{"downloadDir":"` + s.Downloads.Root() + `","language":"ja"}`
+	if w := call(s, "PUT", "/api/v1/settings", body, "", true); w.Code != 200 || !strings.Contains(w.Body.String(), `"effectiveLanguage":"ja"`) {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	// 以降のエラーメッセージは日本語になり、設定ファイルにも保存される。
+	if w := call(s, "POST", "/api/v1/downloads/99/pause", "{}", "", true); !strings.Contains(w.Body.String(), "タスクが見つかりません") {
+		t.Fatalf("%s", w.Body)
+	}
+	raw, _ := os.ReadFile(filepath.Join(s.StateDir, "config.json"))
+	if !strings.Contains(string(raw), `"language": "ja"`) && !strings.Contains(string(raw), `"language":"ja"`) {
+		t.Fatalf("language not persisted: %s", raw)
+	}
+	// 無効な言語は拒否され、現在の言語は変わらない。
+	bad := `{"downloadDir":"` + s.Downloads.Root() + `","language":"fr"}`
+	if w := call(s, "PUT", "/api/v1/settings", bad, "", true); w.Code == 200 || i18n.Lang() != i18n.JA {
+		t.Fatalf("%d %s lang=%s", w.Code, w.Body, i18n.Lang())
+	}
+	// "auto" は環境変数からの推定に戻す。
+	t.Setenv("HITOMI_LANG", "en")
+	if w := call(s, "PUT", "/api/v1/settings", `{"downloadDir":"`+s.Downloads.Root()+`","language":"auto"}`, "", true); !strings.Contains(w.Body.String(), `"effectiveLanguage":"en"`) {
+		t.Fatalf("%s", w.Body)
 	}
 }

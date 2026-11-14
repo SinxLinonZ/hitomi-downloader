@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hitomi-downloader/internal/i18n"
 	"io"
 	"math/rand/v2"
 	"net"
@@ -81,7 +82,7 @@ func New(proxy string) (*Client, error) {
 	} else if proxy != "" {
 		u, e := url.Parse(proxy)
 		if e != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "socks5") {
-			return nil, fmt.Errorf("无效 Proxy URL")
+			return nil, i18n.Errorf("无效 Proxy URL")
 		}
 		t.Proxy = http.ProxyURL(u)
 	}
@@ -170,15 +171,15 @@ func (c *Client) request(ctx context.Context, u, ran string) (*http.Response, er
 		if e != nil && errors.As(e, &dns) && dns.IsNotFound {
 			code, retry = "UPSTREAM_DNS", false
 		}
-		failure := &Error{code, fmt.Sprintf("上游请求失败（HTTP %d，尝试 %d/%d）", status, attempt+1, attempts), retry, status}
+		failure := &Error{code, i18n.Sprintf("上游请求失败（HTTP %d，尝试 %d/%d）", status, attempt+1, attempts), retry, status}
 		if e != nil {
-			failure.Message = "网络请求失败：" + e.Error()
+			failure.Message = i18n.Sprintf("网络请求失败：%s", e.Error())
 		}
 		if !retry || attempt == attempts-1 {
 			return nil, failure
 		}
 		if delay > 60*time.Second {
-			return nil, &Error{"RATE_LIMITED", "上游要求较长等待，请稍后重试", true, status}
+			return nil, &Error{"RATE_LIMITED", i18n.T("上游要求较长等待，请稍后重试"), true, status}
 		}
 		if e := wait(ctx, delay); e != nil {
 			return nil, e
@@ -193,11 +194,11 @@ func (c *Client) Bytes(ctx context.Context, u, ran string, limit int64) ([]byte,
 	}
 	defer r.Body.Close()
 	if ran != "" && r.StatusCode != 206 {
-		return nil, &Error{"INVALID_RANGE", "上游未返回 Partial Content", true, r.StatusCode}
+		return nil, &Error{"INVALID_RANGE", i18n.T("上游未返回 Partial Content"), true, r.StatusCode}
 	}
 	b, e := io.ReadAll(io.LimitReader(r.Body, limit+1))
 	if e == nil && int64(len(b)) > limit {
-		e = fmt.Errorf("上游响应超过大小限制")
+		e = i18n.Errorf("上游响应超过大小限制")
 	}
 	return b, e
 }
@@ -212,14 +213,14 @@ func (c *Client) Gallery(ctx context.Context, id int) (Gallery, error) {
 	}
 	s := strings.TrimSpace(string(b))
 	if !strings.HasPrefix(s, "var galleryinfo = ") {
-		return g, &Error{"PROTOCOL_CHANGED", "无法识别 gallery metadata 格式", false, 0}
+		return g, &Error{"PROTOCOL_CHANGED", i18n.T("无法识别 gallery metadata 格式"), false, 0}
 	}
 	s = strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(s, "var galleryinfo = ")), ";")
 	if e = json.Unmarshal([]byte(s), &g); e != nil {
-		return g, &Error{"PROTOCOL_CHANGED", "无法解析 gallery metadata：" + e.Error(), false, 0}
+		return g, &Error{"PROTOCOL_CHANGED", i18n.T("无法解析 gallery metadata：") + e.Error(), false, 0}
 	}
 	if g.Number() != id || len(g.Files) == 0 {
-		return g, fmt.Errorf("gallery ID 或页面列表无效")
+		return g, i18n.Errorf("gallery ID 或页面列表无效")
 	}
 	g.Raw = json.RawMessage(s)
 	return g, nil
@@ -237,7 +238,7 @@ func (c *Client) Version(ctx context.Context, force bool) (string, error) {
 	}
 	v := strings.TrimSpace(string(b))
 	if !regexp.MustCompile(`^[0-9]+$`).MatchString(v) {
-		return "", fmt.Errorf("无效 index version")
+		return "", i18n.Errorf("无效 index version")
 	}
 	c.version = v
 	c.versionAt = time.Now()
@@ -245,13 +246,13 @@ func (c *Client) Version(ctx context.Context, force bool) (string, error) {
 }
 func decodeIDs(b []byte) ([]int, error) {
 	if len(b)%4 != 0 {
-		return nil, fmt.Errorf("nozomi 数据被截断")
+		return nil, i18n.Errorf("nozomi 数据被截断")
 	}
 	ids := make([]int, 0, len(b)/4)
 	for i := 0; i < len(b); i += 4 {
 		n := int(binary.BigEndian.Uint32(b[i:]))
 		if n <= 0 {
-			return nil, fmt.Errorf("无效 gallery ID")
+			return nil, i18n.Errorf("无效 gallery ID")
 		}
 		ids = append(ids, n)
 	}
@@ -269,7 +270,7 @@ func decodeNode(b []byte) (node, error) {
 	pos := 0
 	read := func(size int) ([]byte, error) {
 		if size < 0 || pos+size > len(b) {
-			return nil, fmt.Errorf("index 数据被截断")
+			return nil, i18n.Errorf("index 数据被截断")
 		}
 		v := b[pos : pos+size]
 		pos += size
@@ -284,12 +285,12 @@ func decodeNode(b []byte) (node, error) {
 	}
 	count, e := num()
 	if e != nil || count > 16 {
-		return n, fmt.Errorf("无效 index key count")
+		return n, i18n.Errorf("无效 index key count")
 	}
 	for i := uint32(0); i < count; i++ {
 		size, e := num()
 		if e != nil || size == 0 || size > 32 {
-			return n, fmt.Errorf("无效 index key size")
+			return n, i18n.Errorf("无效 index key size")
 		}
 		v, e := read(int(size))
 		if e != nil {
@@ -299,7 +300,7 @@ func decodeNode(b []byte) (node, error) {
 	}
 	count, e = num()
 	if e != nil || int(count) != len(n.keys) {
-		return n, fmt.Errorf("无效 index data count")
+		return n, i18n.Errorf("无效 index data count")
 	}
 	for i := uint32(0); i < count; i++ {
 		v, e := read(12)
@@ -320,7 +321,7 @@ func decodeNode(b []byte) (node, error) {
 func (c *Client) term(ctx context.Context, term, version string) ([]int, error) {
 	if ns, tag, ok := strings.Cut(term, ":"); ok {
 		if tag == "" {
-			return nil, fmt.Errorf("标签值不能为空")
+			return nil, i18n.Errorf("标签值不能为空")
 		}
 		path := ""
 		switch ns {
@@ -330,7 +331,7 @@ func (c *Client) term(ctx context.Context, term, version string) ([]int, error) 
 			path = "tag/" + url.PathEscape(ns+":"+tag) + "-all"
 		default:
 			if !regexp.MustCompile(`^(artist|group|series|character|type|tag)$`).MatchString(ns) {
-				return nil, fmt.Errorf("不支持的 namespace：%s", ns)
+				return nil, i18n.Errorf("不支持的 namespace：%s", ns)
 			}
 			path = ns + "/" + url.PathEscape(tag) + "-all"
 		}
@@ -350,7 +351,7 @@ func (c *Client) term(ctx context.Context, term, version string) ([]int, error) 
 	seen := map[uint64]bool{}
 	for depth := 0; depth < 32; depth++ {
 		if seen[address] {
-			return nil, fmt.Errorf("index 节点循环")
+			return nil, i18n.Errorf("index 节点循环")
 		}
 		seen[address] = true
 		b, e := c.Bytes(ctx, c.Base+"/galleriesindex/galleries."+version+".index", fmt.Sprintf("bytes=%d-%d", address, address+463), 464)
@@ -368,14 +369,14 @@ func (c *Client) term(ctx context.Context, term, version string) ([]int, error) 
 		if i < len(n.keys) && string(key) == string(n.keys[i]) {
 			d := n.data[i]
 			if d[1] < 4 || d[1] > 64<<20 || d[0] > 1<<50 {
-				return nil, fmt.Errorf("index range 超出限制")
+				return nil, i18n.Errorf("index range 超出限制")
 			}
 			data, e := c.Bytes(ctx, c.Base+"/galleriesindex/galleries."+version+".data", fmt.Sprintf("bytes=%d-%d", d[0], d[0]+d[1]-1), int64(d[1]))
 			if e != nil {
 				return nil, e
 			}
 			if len(data) < 4 || uint64(len(data)) != d[1] || int(binary.BigEndian.Uint32(data))*4 != len(data)-4 {
-				return nil, fmt.Errorf("index ID 数据不完整")
+				return nil, i18n.Errorf("index ID 数据不完整")
 			}
 			return decodeIDs(data[4:])
 		}
@@ -384,12 +385,12 @@ func (c *Client) term(ctx context.Context, term, version string) ([]int, error) 
 			return []int{}, nil
 		}
 	}
-	return nil, fmt.Errorf("index 深度超出限制")
+	return nil, i18n.Errorf("index 深度超出限制")
 }
 func (c *Client) Search(ctx context.Context, q string) ([]int, error) {
 	terms := strings.Fields(strings.ToLower(strings.TrimSpace(q)))
 	if len(terms) > 20 {
-		return nil, fmt.Errorf("搜索词不得超过 20 个")
+		return nil, i18n.Errorf("搜索词不得超过 20 个")
 	}
 	positive := [][]int{}
 	negative := [][]int{}
@@ -399,7 +400,7 @@ func (c *Client) Search(ctx context.Context, q string) ([]int, error) {
 		term = strings.TrimPrefix(term, "-")
 		term = strings.ReplaceAll(term, "_", " ")
 		if term == "" {
-			return nil, fmt.Errorf("搜索词不能为空")
+			return nil, i18n.Errorf("搜索词不能为空")
 		}
 		if !strings.Contains(term, ":") && version == "" {
 			v, e := c.Version(ctx, false)
@@ -476,7 +477,7 @@ func (c *Client) routing(ctx context.Context, force bool) (routing, error) {
 	path := regexp.MustCompile(`b:\s*'([^']+)'`).FindStringSubmatch(s)
 	cases := regexp.MustCompile(`case\s+(\d+):`).FindAllStringSubmatch(s, -1)
 	if len(def) != 2 || len(other) != 2 || len(path) != 2 || len(cases) == 0 || !regexp.MustCompile(`^[0-9]+/?$`).MatchString(path[1]) {
-		return routing{}, &Error{"PROTOCOL_CHANGED", "gg.js 路由规则已变化，需要更新适配器", false, 0}
+		return routing{}, &Error{"PROTOCOL_CHANGED", i18n.T("gg.js 路由规则已变化，需要更新适配器"), false, 0}
 	}
 	r := routing{B: strings.TrimRight(path[1], "/") + "/", Cases: map[int]bool{}, At: time.Now()}
 	r.Default, _ = strconv.Atoi(def[1])
@@ -490,7 +491,7 @@ func (c *Client) routing(ctx context.Context, force bool) (routing, error) {
 }
 func (c *Client) URL(ctx context.Context, f File, format string, force bool) (string, error) {
 	if len(f.Hash) != 64 {
-		return "", fmt.Errorf("无效图片 hash")
+		return "", i18n.Errorf("无效图片 hash")
 	}
 	if _, e := hex.DecodeString(f.Hash); e != nil {
 		return "", e

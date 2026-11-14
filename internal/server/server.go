@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hitomi-downloader/internal/i18n"
 	"io/fs"
 	"net"
 	"net/http"
@@ -31,6 +32,10 @@ type Config struct {
 	// 並行数。0 は未指定（保存済み・既定値のまま）を表す。GET は常に実効値を返す。
 	TaskConcurrency int `json:"taskConcurrency,omitempty"`
 	PageConcurrency int `json:"pageConcurrency,omitempty"`
+	// 表示言語の設定：auto / zh / ja / en。空は変更なし。ターミナル出力と API メッセージに使う。
+	Language string `json:"language,omitempty"`
+	// 実際に使われている言語（GET/PUT の応答にだけ入る）。
+	EffectiveLanguage string `json:"effectiveLanguage,omitempty"`
 }
 type searchSession struct {
 	IDs []int
@@ -44,6 +49,7 @@ type Server struct {
 	LAN          bool   // LAN の他の端末からの閲覧を許可する
 	Addr         string // 実際に待ち受けているアドレス（host:port）
 	StateDir     string
+	Language     string // 保存済みの表示言語設定（auto / zh / ja / en）。空は auto と同じ
 	mu           sync.Mutex
 	sessions     map[string]searchSession
 	settingsMu   sync.Mutex
@@ -62,7 +68,7 @@ func New(c *hitomi.Client, m *download.Manager, state string) *Server {
 // currentConfig は実際に適用されている設定（並行数は 0 にならない）を返す。
 func (s *Server) currentConfig() Config {
 	tasks, pages := s.Downloads.Concurrency()
-	return Config{DownloadDir: s.Downloads.Root(), TaskConcurrency: tasks, PageConcurrency: pages}
+	return Config{DownloadDir: s.Downloads.Root(), TaskConcurrency: tasks, PageConcurrency: pages, Language: s.Language}
 }
 func (s *Server) RequestShutdown()                   { s.shutdownOnce.Do(func() { close(s.shutdown) }) }
 func (s *Server) ShutdownRequested() <-chan struct{} { return s.shutdown }
@@ -109,7 +115,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/galleries/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id, e := strconv.Atoi(r.PathValue("id"))
 		if e != nil || id <= 0 {
-			fail(w, fmt.Errorf("无效 ID"))
+			fail(w, i18n.Errorf("无效 ID"))
 			return
 		}
 		g, e := s.Client.Gallery(r.Context(), id)
@@ -213,7 +219,7 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		if len(body.Directories) == 0 || len(body.Directories) > 200 {
-			fail(w, fmt.Errorf("请选择 1 至 200 个作品迁移"))
+			fail(w, i18n.Errorf("请选择 1 至 200 个作品迁移"))
 			return
 		}
 		accepted := []string{}
@@ -275,7 +281,7 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		if len(body.Directories) == 0 || len(body.Directories) > 200 {
-			fail(w, fmt.Errorf("请选择 1 至 200 个作品"))
+			fail(w, i18n.Errorf("请选择 1 至 200 个作品"))
 			return
 		}
 		accepted := []string{}
@@ -301,7 +307,7 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		if len(body.Directories) == 0 || len(body.Directories) > 200 {
-			fail(w, fmt.Errorf("请选择 1 至 200 个作品"))
+			fail(w, i18n.Errorf("请选择 1 至 200 个作品"))
 			return
 		}
 		accepted := []string{}
@@ -318,7 +324,11 @@ func (s *Server) Handler() http.Handler {
 		}
 		jsonOut(w, map[string]any{"accepted": accepted, "errors": problems})
 	})
-	mux.HandleFunc("GET /api/v1/settings", func(w http.ResponseWriter, r *http.Request) { jsonOut(w, s.currentConfig()) })
+	mux.HandleFunc("GET /api/v1/settings", func(w http.ResponseWriter, r *http.Request) {
+		c := s.currentConfig()
+		c.EffectiveLanguage = i18n.Lang()
+		jsonOut(w, c)
+	})
 	mux.HandleFunc("PUT /api/v1/settings", func(w http.ResponseWriter, r *http.Request) {
 		s.settingsMu.Lock()
 		defer s.settingsMu.Unlock()
@@ -328,12 +338,20 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		if !filepath.IsAbs(c.DownloadDir) {
-			fail(w, fmt.Errorf("请填写绝对路径"))
+			fail(w, i18n.Errorf("请填写绝对路径"))
 			return
 		}
 		old := s.currentConfig()
+		switch c.Language {
+		case "":
+			c.Language = old.Language
+		case "auto", i18n.ZH, i18n.JA, i18n.EN:
+		default:
+			fail(w, i18n.Errorf("不支持的语言：%s", c.Language))
+			return
+		}
 		if c.TaskConcurrency < 0 || c.PageConcurrency < 0 {
-			fail(w, fmt.Errorf("并发数必须为正整数"))
+			fail(w, i18n.Errorf("并发数必须为正整数"))
 			return
 		}
 		if e := s.Downloads.SetConcurrency(c.TaskConcurrency, c.PageConcurrency); e != nil {
@@ -345,13 +363,17 @@ func (s *Server) Handler() http.Handler {
 			fail(w, e)
 			return
 		}
+		s.Language = c.Language
 		saved := s.currentConfig()
 		if e := download.AtomicJSON(filepath.Join(s.StateDir, "config.json"), saved); e != nil {
+			s.Language = old.Language
 			_ = s.Downloads.SetRoot(old.DownloadDir)
 			_ = s.Downloads.SetConcurrency(old.TaskConcurrency, old.PageConcurrency)
 			fail(w, e)
 			return
 		}
+		i18n.SetLang(s.Language)
+		saved.EffectiveLanguage = i18n.Lang()
 		jsonOut(w, saved)
 	})
 	mux.HandleFunc("GET /api/v1/events", func(w http.ResponseWriter, r *http.Request) {
@@ -451,13 +473,13 @@ func (s *Server) Handler() http.Handler {
 		switch {
 		case strings.HasPrefix(path, "/api/v1/reader/"):
 			if !reader {
-				http.Error(w, "请使用手机阅读链接打开", 401)
+				http.Error(w, i18n.T("请使用手机阅读链接打开"), 401)
 				return
 			}
 		case strings.HasPrefix(path, "/api/"):
 			if !admin {
 				if local {
-					http.Error(w, "请使用 CLI 打印的启动链接打开界面", 401)
+					http.Error(w, i18n.T("请使用 CLI 打印的启动链接打开界面"), 401)
 				} else {
 					http.Error(w, "forbidden", 403)
 				}
@@ -490,7 +512,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		session, ok := s.sessions[sessionID]
 		s.mu.Unlock()
 		if !ok || time.Since(session.At) > 30*time.Minute {
-			fail(w, fmt.Errorf("搜索已过期，请重新搜索"))
+			fail(w, i18n.Errorf("搜索已过期，请重新搜索"))
 			return
 		}
 		ids = session.IDs
@@ -528,7 +550,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	}
 	start := (page - 1) * 24
 	if start < 0 || start > len(ids) {
-		fail(w, fmt.Errorf("页码超出范围"))
+		fail(w, i18n.Errorf("页码超出范围"))
 		return
 	}
 	end := start + 24
@@ -578,7 +600,7 @@ func (s *Server) galleryItems(ctx context.Context, ids []int) []galleryItem {
 func (s *Server) related(w http.ResponseWriter, r *http.Request) {
 	id, e := strconv.Atoi(r.PathValue("id"))
 	if e != nil || id <= 0 {
-		fail(w, fmt.Errorf("无效 ID"))
+		fail(w, i18n.Errorf("无效 ID"))
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
@@ -606,7 +628,7 @@ func (s *Server) related(w http.ResponseWriter, r *http.Request) {
 func (s *Server) cover(w http.ResponseWriter, r *http.Request) {
 	id, e := strconv.Atoi(r.PathValue("id"))
 	if e != nil || id <= 0 {
-		fail(w, fmt.Errorf("无效 ID"))
+		fail(w, i18n.Errorf("无效 ID"))
 		return
 	}
 	cache := filepath.Join(s.StateDir, "covers", strconv.Itoa(id)+".webp")
@@ -630,7 +652,7 @@ func (s *Server) cover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(b) < 12 || string(b[:4]) != "RIFF" || string(b[8:12]) != "WEBP" {
-		fail(w, fmt.Errorf("封面不是有效 WebP"))
+		fail(w, i18n.Errorf("封面不是有效 WebP"))
 		return
 	}
 	if e = os.MkdirAll(filepath.Dir(cache), 0700); e == nil {

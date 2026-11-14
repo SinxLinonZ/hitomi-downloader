@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"hitomi-downloader/internal/i18n"
 	"io"
 	"os"
 	"path/filepath"
@@ -47,12 +47,12 @@ func (m *Manager) MigrationTargets() (MigrationTargets, error) {
 	defer m.mu.Unlock()
 	result := MigrationTargets{Directories: []string{}}
 	if m.closing {
-		return result, fmt.Errorf("服务正在停止")
+		return result, i18n.Errorf("服务正在停止")
 	}
 	m.library.mu.Lock()
 	defer m.library.mu.Unlock()
 	if m.library.status.Root != m.root || m.library.status.State != "completed" {
-		return result, fmt.Errorf("请等待目录扫描完成后再全部迁移")
+		return result, i18n.Errorf("请等待目录扫描完成后再全部迁移")
 	}
 	for _, entry := range m.library.entries {
 		if !entry.Legacy {
@@ -148,13 +148,13 @@ func walkLibrary(ctx context.Context, root string, emit func(Entry), progress fu
 		}
 		progress(dir, "")
 		if depth > 64 {
-			progress(dir, "目录层级超过限制："+dir)
+			progress(dir, i18n.Sprintf("目录层级超过限制：%s", dir))
 			return nil
 		}
 		info, e := os.Lstat(filepath.Join(dir, "metadata.json"))
 		if e == nil {
 			if !info.Mode().IsRegular() {
-				progress(dir, "metadata 不是普通文件："+dir)
+				progress(dir, i18n.Sprintf("metadata 不是普通文件：%s", dir))
 				return nil
 			}
 			meta, g, e := readMetadata(dir)
@@ -210,7 +210,7 @@ func (m *Manager) StartScan(force bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closing {
-		return fmt.Errorf("服务正在停止")
+		return i18n.Errorf("服务正在停止")
 	}
 	root := m.root
 	m.library.mu.Lock()
@@ -418,7 +418,7 @@ type AlreadyDownloadedError struct {
 }
 
 func (e *AlreadyDownloadedError) Error() string {
-	return fmt.Sprintf("该作品已在下载目录中（%s），如需补全或检查请使用“验证”", filepath.Base(e.Directory))
+	return i18n.Sprintf("该作品已在下载目录中（%s），如需补全或检查请使用“验证”", filepath.Base(e.Directory))
 }
 
 // DownloadedDirs は ids のうち、走査済みの本地库にあるものを ID → ディレクトリで返す。

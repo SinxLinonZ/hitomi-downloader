@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hitomi-downloader/internal/i18n"
 	"image"
 	"io"
 	"os"
@@ -45,7 +46,7 @@ func (m *Manager) Migrate(dir string) error {
 		return e
 	}
 	if !meta.Legacy {
-		return fmt.Errorf("该作品已使用新 metadata，无需迁移")
+		return i18n.Errorf("该作品已使用新 metadata，无需迁移")
 	}
 	return m.Start(g.Number(), dir, "migrate")
 }
@@ -78,7 +79,7 @@ func normalizeLegacy(raw json.RawMessage) (json.RawMessage, error) {
 func inspectPage(ctx context.Context, dir, name string, index int, source hitomi.File) (Page, error) {
 	var p Page
 	if filepath.Base(name) != name {
-		return p, fmt.Errorf("无效图片路径")
+		return p, i18n.Errorf("无效图片路径")
 	}
 	path := filepath.Join(dir, name)
 	info, e := os.Lstat(path)
@@ -86,7 +87,7 @@ func inspectPage(ctx context.Context, dir, name string, index int, source hitomi
 		return p, e
 	}
 	if !info.Mode().IsRegular() || info.Size() == 0 || info.Size() > 256<<20 {
-		return p, fmt.Errorf("图片不是有效普通文件或超过大小限制")
+		return p, i18n.Errorf("图片不是有效普通文件或超过大小限制")
 	}
 	f, e := os.Open(path)
 	if e != nil {
@@ -101,10 +102,10 @@ func inspectPage(ctx context.Context, dir, name string, index int, source hitomi
 	head = head[:n]
 	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(name), "."))
 	if !imageSignature(head, ext) {
-		return p, fmt.Errorf("图片签名与格式不符")
+		return p, i18n.Errorf("图片签名与格式不符")
 	}
 	if ext == "webp" && int64(binary.LittleEndian.Uint32(head[4:8]))+8 != info.Size() {
-		return p, fmt.Errorf("WebP 内容长度不完整")
+		return p, i18n.Errorf("WebP 内容长度不完整")
 	}
 	if ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "gif" {
 		if _, e = f.Seek(0, 0); e != nil {
@@ -115,7 +116,7 @@ func inspectPage(ctx context.Context, dir, name string, index int, source hitomi
 			return p, e
 		}
 		if cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width)*int64(cfg.Height) > 100_000_000 {
-			return p, fmt.Errorf("图片尺寸无效或超过限制")
+			return p, i18n.Errorf("图片尺寸无效或超过限制")
 		}
 	}
 	return Page{Index: index, Name: name, SourceHash: source.Hash, Format: ext, Bytes: info.Size()}, nil
@@ -130,7 +131,7 @@ func backupLegacy(dir string, original []byte) error {
 			return e
 		}
 		if !bytes.Equal(b, original) {
-			return fmt.Errorf("已有 metadata.legacy.json 与当前旧 metadata 不同，停止迁移以保留备份")
+			return i18n.Errorf("已有 metadata.legacy.json 与当前旧 metadata 不同，停止迁移以保留备份")
 		}
 		return nil
 	}
@@ -157,7 +158,7 @@ func (m *Manager) migrate(ctx context.Context, task Task) error {
 		return e
 	}
 	if g.Number() != task.ID {
-		return fmt.Errorf("metadata ID 与迁移任务不一致")
+		return i18n.Errorf("metadata ID 与迁移任务不一致")
 	}
 	if !meta.Legacy {
 		if strings.HasPrefix(meta.QualityPolicy, "migrated-existing-files") {
@@ -172,22 +173,22 @@ func (m *Manager) migrate(ctx context.Context, task Task) error {
 				}
 				for i := range g.Files {
 					if !seen[i] {
-						t.Errors[i+1] = "该页尚未建立校验记录"
+						t.Errors[i+1] = i18n.T("该页尚未建立校验记录")
 					}
 				}
 				if len(t.Errors) > 0 {
-					t.Warning = "迁移已完成，部分页面仍需验证并补全"
+					t.Warning = i18n.T("迁移已完成，部分页面仍需验证并补全")
 				}
 			})
 		}
-		return fmt.Errorf("metadata 已迁移，请重新扫描")
+		return i18n.Errorf("metadata 已迁移，请重新扫描")
 	}
 	original, e := os.ReadFile(filepath.Join(dir, "metadata.json"))
 	if e != nil {
 		return e
 	}
 	if !bytes.Equal(original, meta.Gallery) {
-		return fmt.Errorf("读取期间 metadata 发生变化，请重试")
+		return i18n.Errorf("读取期间 metadata 发生变化，请重试")
 	}
 	raw, e := normalizeLegacy(meta.Gallery)
 	if e != nil {
@@ -247,9 +248,9 @@ func (m *Manager) migrate(ctx context.Context, task Task) error {
 				var page Page
 				var problem error
 				if len(names) == 0 {
-					problem = fmt.Errorf("缺少图片")
+					problem = i18n.Errorf("缺少图片")
 				} else if len(names) > 1 {
-					problem = fmt.Errorf("同一页存在多个格式，请整理后再补全：%s", strings.Join(names, ", "))
+					problem = i18n.Errorf("同一页存在多个格式，请整理后再补全：%s", strings.Join(names, ", "))
 				} else {
 					page, problem = inspectPage(ctx, dir, names[0], i, g.Files[i])
 				}
@@ -302,7 +303,7 @@ send:
 		return e
 	}
 	if !bytes.Equal(current, original) {
-		return fmt.Errorf("迁移期间 metadata 发生变化，已停止写入")
+		return i18n.Errorf("迁移期间 metadata 发生变化，已停止写入")
 	}
 	if e = backupLegacy(dir, original); e != nil {
 		return e
@@ -314,7 +315,7 @@ send:
 	m.refreshIndex(dir)
 	return m.update(task.ID, func(t *Task) {
 		if issues > 0 {
-			t.Warning = fmt.Sprintf("迁移完成，%d 页缺失、损坏或存在歧义；可查看详情后验证并补全", issues)
+			t.Warning = i18n.Sprintf("迁移完成，%d 页缺失、损坏或存在歧义；可查看详情后验证并补全", issues)
 		}
 	})
 }

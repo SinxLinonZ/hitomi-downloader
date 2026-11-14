@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"hitomi-downloader/internal/i18n"
 	"log"
 	"net"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,15 +28,34 @@ func main() {
 		log.Fatal(e)
 	}
 }
+
+// 引数 --lang=xx / --lang xx を、フラグ定義（= --help の文言）より前に拾う。
+func langFromArgs(args []string) string {
+	for i, a := range args {
+		a = strings.TrimLeft(a, "-")
+		if v, ok := strings.CutPrefix(a, "lang="); ok {
+			return v
+		}
+		if a == "lang" && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
+}
+
 func run() error {
-	port := flag.Int("port", 0, "本地 HTTP 端口，0 为自动分配")
-	state := flag.String("data-dir", "./data", "配置和任务记录目录")
-	root := flag.String("download-dir", "", "下载目录（覆盖已保存设置）")
-	proxy := flag.String("proxy", "", "Proxy URL；direct 禁用 Proxy；默认使用环境变量")
-	taskConc := flag.Int("task-concurrency", 0, "同时处理的任务数（覆盖已保存设置，默认 2）")
-	pageConc := flag.Int("page-concurrency", 0, "每个任务的并发文件数（覆盖已保存设置，默认 4）")
-	lan := flag.Bool("lan", false, "允许同一局域网的手机打开只读的阅读页（/reader）；默认只监听本机")
-	noOpen := flag.Bool("no-open", false, "不自动打开浏览器")
+	// 言語の優先順位：--lang ＞ 保存済みの設定 ＞ 環境変数（HITOMI_LANG / LANG など）。
+	argLang := langFromArgs(os.Args[1:])
+	i18n.SetLang(argLang)
+	port := flag.Int("port", 0, i18n.T("本地 HTTP 端口，0 为自动分配"))
+	state := flag.String("data-dir", "./data", i18n.T("配置和任务记录目录"))
+	root := flag.String("download-dir", "", i18n.T("下载目录（覆盖已保存设置）"))
+	proxy := flag.String("proxy", "", i18n.T("Proxy URL；direct 禁用 Proxy；默认使用环境变量"))
+	taskConc := flag.Int("task-concurrency", 0, i18n.T("同时处理的任务数（覆盖已保存设置，默认 2）"))
+	pageConc := flag.Int("page-concurrency", 0, i18n.T("每个任务的并发文件数（覆盖已保存设置，默认 4）"))
+	lan := flag.Bool("lan", false, i18n.T("允许同一局域网的手机打开只读的阅读页（/reader）；默认只监听本机"))
+	noOpen := flag.Bool("no-open", false, i18n.T("不自动打开浏览器"))
+	flag.String("lang", "", i18n.T("界面和提示语言：auto、zh、ja、en（覆盖已保存设置，默认按环境变量判断）"))
 	flag.Parse()
 	statePath, e := filepath.Abs(*state)
 	if e != nil {
@@ -45,10 +66,13 @@ func run() error {
 	var saved server.Config
 	if b, e := os.ReadFile(configPath); e == nil {
 		if e = json.Unmarshal(b, &saved); e != nil {
-			return fmt.Errorf("配置损坏：%w", e)
+			return i18n.Errorf("配置损坏：%w", e)
 		}
 	} else if !os.IsNotExist(e) {
 		return e
+	}
+	if argLang == "" && saved.Language != "" {
+		i18n.SetLang(saved.Language)
 	}
 	if *root == "" {
 		*root = saved.DownloadDir
@@ -75,6 +99,10 @@ func run() error {
 		return e
 	}
 	app := server.New(client, manager, statePath)
+	app.Language = saved.Language
+	if argLang != "" {
+		app.Language = argLang
+	}
 	bind := "127.0.0.1"
 	if *lan {
 		bind = "0.0.0.0"
@@ -88,14 +116,14 @@ func run() error {
 	listenPort := listener.Addr().(*net.TCPAddr).Port
 	url := fmt.Sprintf("http://127.0.0.1:%d/?token=%s", listenPort, app.Token)
 	fmt.Println("Hitomi Local:", url)
-	fmt.Println("下载目录:", manager.Root())
+	fmt.Println(i18n.T("下载目录:"), manager.Root())
 	if *lan {
-		fmt.Println("手机阅读（只读，需在同一局域网）：")
+		fmt.Println(i18n.T("手机阅读（只读，需在同一局域网）："))
 		for _, link := range app.ReaderLinks() {
 			fmt.Println("  ", link)
 		}
 	} else {
-		fmt.Println("手机阅读：以 --lan 启动后，可在 GUI 的“设置”中获取手机链接")
+		fmt.Println(i18n.T("手机阅读：以 --lan 启动后，可在 GUI 的“设置”中获取手机链接"))
 	}
 	if !*noOpen {
 		var cmd *exec.Cmd
@@ -110,7 +138,7 @@ func run() error {
 		if e := cmd.Start(); e == nil {
 			go func() { _ = cmd.Wait() }()
 		} else {
-			log.Printf("请手动打开启动链接：%v", e)
+			log.Print(i18n.Sprintf("请手动打开启动链接：%v", e))
 		}
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
