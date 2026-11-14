@@ -26,21 +26,10 @@ import {
 } from "@tabler/icons-react";
 import { api, Gallery, Search } from "./api";
 import { Cover, Empty, errorText, report, titles } from "./common";
+import { GalleryCard } from "./GalleryCard";
+import { WorkDrawer } from "./WorkDrawer";
 
 const HINT = "多个词取交集；标签中的空格用下划线连接，前缀 - 排除标签。";
-
-async function addDownload(id: number | string) {
-  try {
-    await api("/downloads", { id: Number(id) });
-    notifications.show({
-      title: "已加入下载队列",
-      message: `作品 #${id} · 优先获取源文件`,
-      color: "teal",
-    });
-  } catch (e) {
-    report(e);
-  }
-}
 
 export function SearchPane({ disabled }: { disabled: boolean }) {
   const [query, setQuery] = useState("");
@@ -48,10 +37,7 @@ export function SearchPane({ disabled }: { disabled: boolean }) {
   const [result, setResult] = useState<Search>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  // 関連作品をたどれるよう、開いた詳細を履歴として積む。
-  const [trail, setTrail] = useState<Gallery[]>([]);
-  const picked = trail[trail.length - 1];
-  const setPicked = (g?: Gallery) => setTrail(g ? [g] : []);
+  const [picked, setPicked] = useState<Gallery>();
   const [coverKey, setCoverKey] = useState(0);
   const request = useRef<AbortController | null>(null);
   const lastSearch = useRef<{ page: number; session?: string }>({ page: 1 });
@@ -251,215 +237,10 @@ export function SearchPane({ disabled }: { disabled: boolean }) {
       ) : (
         !busy && <Empty text="从一个关键词开始，或直接打开作品 ID。" />
       )}
-      <Drawer
-        opened={!!picked}
+      <WorkDrawer
+        opened={picked ? { gallery: picked } : undefined}
         onClose={() => setPicked(undefined)}
-        title="作品详情"
-        position="right"
-        size="lg"
-        padding="md"
-      >
-        {picked && (
-          <>
-            {trail.length > 1 && (
-              <Button
-                variant="subtle"
-                color="gray"
-                mb="xs"
-                leftSection={<IconArrowLeft size={14} />}
-                onClick={() => setTrail((t) => t.slice(0, -1))}
-              >
-                返回上一个作品
-              </Button>
-            )}
-            <WorkDetail
-              key={picked.id}
-              g={picked}
-              onOpen={(g) => setTrail((t) => [...t, g])}
-            />
-          </>
-        )}
-      </Drawer>
-    </>
-  );
-}
-
-function GalleryCard({
-  id,
-  g,
-  coverKey = 0,
-  onOpen,
-}: {
-  id: number | string;
-  g: Gallery;
-  coverKey?: number;
-  onOpen: (g: Gallery) => void;
-}) {
-  const { main, sub } = titles(g.title, g.japanese_title);
-  return (
-    <Paper withBorder className="g-card">
-      <Cover
-        key={`${id}-${coverKey}`}
-        src={`/api/v1/covers/${id}?v=${coverKey}`}
-        alt={`${main} 封面`}
-        onClick={() => onOpen(g)}
       />
-      <span className="g-id">#{id}</span>
-      <div className="g-body">
-        <div
-          className="gallery-title"
-          title={sub ? `${main}\n${sub}` : main}
-          onClick={() => onOpen(g)}
-        >
-          {main}
-        </div>
-        <div className="g-meta">
-          <span>
-            {g.language || "未知语言"} · {g.files.length} 页
-          </span>
-          <Group gap={0} wrap="nowrap">
-            <Tooltip label="查看详情">
-              <ActionIcon
-                variant="subtle"
-                color="gray"
-                size="sm"
-                aria-label="查看详情"
-                onClick={() => onOpen(g)}
-              >
-                <IconInfoCircle size={15} />
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label="加入下载队列">
-              <ActionIcon
-                variant="light"
-                size="sm"
-                aria-label={`下载 #${id}`}
-                onClick={() => addDownload(id)}
-              >
-                <IconArrowDown size={15} />
-              </ActionIcon>
-            </Tooltip>
-          </Group>
-        </div>
-      </div>
-    </Paper>
-  );
-}
-
-type RelatedItem = { id: number; gallery?: Gallery; error?: string };
-
-// Hitomi の作品ページと同様に、関連作品を詳細の下に並べる。
-function Related({ id, onOpen }: { id: number | string; onOpen: (g: Gallery) => void }) {
-  const [items, setItems] = useState<RelatedItem[]>();
-  const [error, setError] = useState("");
-  useEffect(() => {
-    const controller = new AbortController();
-    api<{ items: RelatedItem[] }>(
-      `/galleries/${id}/related`,
-      undefined,
-      undefined,
-      controller.signal,
-    )
-      .then((r) => setItems(r.items))
-      .catch((e) => {
-        if (!controller.signal.aborted) setError(errorText(e));
-      });
-    return () => controller.abort();
-  }, [id]);
-  return (
-    <section aria-label="相关作品" style={{ marginTop: 16 }}>
-      <Group gap={6} mb="xs">
-        <Text fw={600} size="sm">
-          相关作品{items ? `（${items.length}）` : ""}
-        </Text>
-        {!items && !error && <Loader size={12} />}
-      </Group>
-      {error && (
-        <Text size="xs" c="red">
-          {error}
-        </Text>
-      )}
-      {items && items.length === 0 && (
-        <Text size="xs" c="dimmed">
-          没有相关作品。
-        </Text>
-      )}
-      {items && items.length > 0 && (
-        <div className="gallery-grid related-grid">
-          {items.map((item) =>
-            item.gallery ? (
-              <GalleryCard key={item.id} id={item.id} g={item.gallery} onOpen={onOpen} />
-            ) : (
-              <Paper withBorder key={item.id} className="g-card">
-                <div className="g-error">
-                  <Text size="xs" c="dimmed">
-                    #{item.id}
-                  </Text>
-                  <Text size="xs" c="red">
-                    {item.error}
-                  </Text>
-                </div>
-              </Paper>
-            ),
-          )}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function WorkDetail({ g, onOpen }: { g: Gallery; onOpen: (g: Gallery) => void }) {
-  const { main, sub } = titles(g.title, g.japanese_title);
-  const artists = g.artists?.map((a) => a.artist).join("、");
-  return (
-    <>
-      <div className="detail-head">
-        <Cover src={`/api/v1/covers/${g.id}`} alt={`${main} 封面`} />
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <Title order={4} lh={1.35}>
-            {main}
-          </Title>
-          {sub && (
-            <Text size="xs" c="dimmed" mt={2} className="work-title-secondary" style={{ whiteSpace: "normal" }}>
-              {sub}
-            </Text>
-          )}
-          <Group gap={4} mt={6}>
-            <Badge>{g.language || "未知语言"}</Badge>
-            <Badge variant="light">{g.files.length} 页</Badge>
-            <Badge variant="light">{g.type}</Badge>
-            <Badge variant="outline" color="gray">
-              #{g.id}
-            </Badge>
-          </Group>
-          {artists && (
-            <Text size="xs" mt={6}>
-              {artists}
-            </Text>
-          )}
-        </div>
-      </div>
-      <Group gap={4} mt="sm">
-        {g.tags?.map((t, i) => (
-          <Badge
-            key={i}
-            variant="outline"
-            color={t.female ? "pink" : t.male ? "blue" : "gray"}
-          >
-            {t.female ? "female:" : t.male ? "male:" : ""}
-            {t.tag}
-          </Badge>
-        ))}
-      </Group>
-      <Button
-        fullWidth
-        mt="md"
-        leftSection={<IconDownload size={15} />}
-        onClick={() => addDownload(g.id)}
-      >
-        加入下载队列
-      </Button>
-      <Related id={g.id} onOpen={onOpen} />
     </>
   );
 }

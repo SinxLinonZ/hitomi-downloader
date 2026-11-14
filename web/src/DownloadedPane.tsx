@@ -24,11 +24,33 @@ import {
   IconShieldCheck,
   IconX,
 } from "@tabler/icons-react";
-import { api, Entry, LibraryPage, Task } from "./api";
+import { api, Entry, Gallery, LibraryPage, Task } from "./api";
 import { Cover, Empty, errorText, report, titles } from "./common";
+import { Opened, WorkDrawer } from "./WorkDrawer";
 
 type Batch = { accepted: string[]; errors: Record<string, string> };
 const PAGE_SIZE = 50;
+const coverUrl = (entry: Entry) =>
+  `/api/v1/library/cover?directory=${encodeURIComponent(entry.directory)}&v=${encodeURIComponent(entry.updatedAt || "")}`;
+
+// ローカルの metadata から詳細表示用の作品情報を組み立てる。関連作品だけはオンラインで取得する。
+function toOpened(entry: Entry): Opened {
+  const gallery: Gallery = {
+    id: entry.id,
+    title: entry.title,
+    japanese_title: entry.japaneseTitle,
+    language: entry.language,
+    type: entry.type,
+    files: new Array(entry.pages).fill({ name: "", width: 0, height: 0 }),
+    artists: entry.artists.map((artist) => ({ artist })),
+    tags: (entry.tags || []).map((t) => ({
+      tag: t.name,
+      female: t.namespace === "female" ? 1 : 0,
+      male: t.namespace === "male" ? 1 : 0,
+    })),
+  };
+  return { gallery, coverSrc: coverUrl(entry), directory: entry.directory };
+}
 const MIGRATE_HINT =
   "旧格式不会自动改写。迁移会备份原 metadata，读取现有图片并建立校验记录；缺失页面可在迁移后补全。";
 
@@ -56,6 +78,7 @@ export function DownloadedPane({
   const [queueing, setQueueing] = useState(false);
   const [queueProgress, setQueueProgress] = useState("");
   const [cancelling, setCancelling] = useState(false);
+  const [opened, setOpened] = useState<Opened>();
   const taskRevision = tasks
     .map((t) => `${t.id}:${t.operation}:${t.state}`)
     .join("|");
@@ -576,11 +599,15 @@ export function DownloadedPane({
                 onChange={() => toggle(entry)}
               />
               <Cover
-                src={`/api/v1/library/cover?directory=${encodeURIComponent(entry.directory)}&v=${encodeURIComponent(entry.updatedAt || "")}`}
+                src={coverUrl(entry)}
                 alt={`${main} 封面`}
+                onClick={() => setOpened(toOpened(entry))}
               />
               <div className="downloaded-info">
-                <div className="d-title">
+                <div
+                  className="d-title"
+                  onClick={() => setOpened(toOpened(entry))}
+                >
                   {entry.legacy && (
                     <Badge size="xs" color="orange" variant="light">
                       待迁移
@@ -645,6 +672,7 @@ export function DownloadedPane({
           }
         />
       )}
+      <WorkDrawer opened={opened} onClose={() => setOpened(undefined)} />
       {data && data.total > PAGE_SIZE && (
         <div className="pager">
           <Pagination

@@ -96,6 +96,10 @@ test("AppShell 导航和停止后的操作状态", async ({ page }) => {
       await route.fulfill({ status: 404 });
       return;
     }
+    if (path.endsWith("/related")) {
+      await route.fulfill({ json: { items: [] } });
+      return;
+    }
     if (path === "/api/v1/library/migrate") {
       expect(route.request().postDataJSON().directories).toEqual([legacyDir]);
       migrated = true;
@@ -163,6 +167,20 @@ test("AppShell 导航和停止后的操作状态", async ({ page }) => {
   await expect(
     page.getByRole("img", { name: "日本語タイトル 封面" }),
   ).toBeVisible();
+  // 封面和标题都能打开作品详情，详情中显示本地目录而不是下载按钮。
+  const dialog = page.getByRole("dialog", { name: "作品详情" });
+  await page.getByRole("img", { name: "日本語タイトル 封面" }).click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText(legacyDir)).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "加入下载队列" }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await page.locator(".downloaded-row .d-title").click();
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
   expect(migrated).toBe(false);
   await page.getByRole("checkbox", { name: "选择作品 7", exact: true }).check();
   await page
@@ -415,6 +433,11 @@ test("队列支持全部暂停、全部开始、隐藏和移除已完成任务",
   await page.goto("http://hitomi.test/");
   await page.getByRole("button", { name: /^下载队列/ }).click();
   await expect(page.getByText("已完成示例", { exact: true })).toBeVisible();
+  // 行をクリックするとタスク詳細が開く。操作ボタンのクリックでは開かない。
+  await page.getByText("运行中的示例", { exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "任务详情" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toBeHidden();
   // 「待恢复」だけに絞り込むと、完了済みと実行中のタスクは表示されない。
   await page.getByText(/^待恢复/).click();
   await expect(page.getByText("已完成示例", { exact: true })).toHaveCount(0);

@@ -187,7 +187,11 @@ export function QueuePane({
             >
               <Table.Tbody>
                 {shown.map((t) => (
-                  <Table.Tr key={t.id}>
+                  <Table.Tr
+                    key={t.id}
+                    style={{ cursor: "pointer" }}
+                    onClick={() => setDetailId(t.id)}
+                  >
                     <Table.Td w={64}>
                       <Badge size="sm" variant="light" color={stateColor(t.state)}>
                         {stateLabels[t.state] || t.state}
@@ -232,7 +236,11 @@ export function QueuePane({
                         </span>
                       </div>
                     </Table.Td>
-                    <Table.Td w={112} style={{ whiteSpace: "nowrap" }}>
+                    <Table.Td
+                      w={112}
+                      style={{ whiteSpace: "nowrap", cursor: "default" }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {isActive(t) ? (
                         <Tooltip label="暂停">
                           <ActionIcon

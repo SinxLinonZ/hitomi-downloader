@@ -139,6 +139,11 @@ test("搜索保留正常作品，并显示失败卡片与恢复操作", async ({
   await expect(
     page.getByRole("button", { name: "重试此页信息" }),
   ).toBeVisible();
+  // 封面、标题、详情按钮都能打开详情。
+  await page.locator(".g-card .cover").first().click();
+  await expect(page.getByRole("dialog", { name: "作品详情" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toBeHidden();
   await page.getByRole("button", { name: "查看详情", exact: true }).click();
   const details = page.getByRole("dialog", { name: "作品详情" });
   await expect(

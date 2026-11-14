@@ -326,3 +326,10 @@ body {
 .related-grid {
   grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
 }
+.downloaded-row .cover,
+.d-title {
+  cursor: pointer;
+}
+.d-title:hover .main-title {
+  color: var(--mantine-color-teal-4);
+}
