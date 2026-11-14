@@ -109,6 +109,45 @@ func TestSearchKeepsSuccessfulCardsWhenOneGalleryFails(t *testing.T) {
 	}
 }
 
+func TestRelatedGalleriesKeepFailuresAndSkipSelf(t *testing.T) {
+	s := setup(t)
+	hash := strings.Repeat("a", 64)
+	s.Client.HTTP.Transport = rt(func(r *http.Request) (*http.Response, error) {
+		status := 200
+		var b []byte
+		switch r.URL.Path {
+		case "/galleries/1.js":
+			b = []byte(`var galleryinfo = {"id":1,"title":"Main","related":[1,2,3,2],"files":[{"name":"p.png","hash":"` + hash + `"}]}`)
+		case "/galleries/2.js":
+			b = []byte(`var galleryinfo = {"id":2,"title":"Related","files":[{"name":"p.png","hash":"` + hash + `"}]}`)
+		default:
+			status = 404
+		}
+		return &http.Response{StatusCode: status, Body: io.NopCloser(bytes.NewReader(b)), Header: http.Header{}, Request: r}, nil
+	})
+	if w := call(s, "GET", "/api/v1/galleries/1/related", "", "", false); w.Code != 401 {
+		t.Fatal(w.Code)
+	}
+	w := call(s, "GET", "/api/v1/galleries/1/related", "", "", true)
+	if w.Code != 200 {
+		t.Fatal(w.Code, w.Body)
+	}
+	var result struct {
+		Items []struct {
+			ID      int             `json:"id"`
+			Gallery json.RawMessage `json:"gallery"`
+			Error   string          `json:"error"`
+		} `json:"items"`
+	}
+	if e := json.Unmarshal(w.Body.Bytes(), &result); e != nil {
+		t.Fatal(e)
+	}
+	// 自分自身と重複は除外し、取得に失敗した作品も項目として残す。
+	if len(result.Items) != 2 || result.Items[0].ID != 2 || len(result.Items[0].Gallery) == 0 || result.Items[1].ID != 3 || result.Items[1].Error == "" {
+		t.Fatalf("%s", w.Body)
+	}
+}
+
 func TestShutdownEndpointRequiresSessionAndSameOrigin(t *testing.T) {
 	s := setup(t)
 	for _, tc := range []struct {

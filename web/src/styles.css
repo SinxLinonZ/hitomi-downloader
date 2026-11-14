@@ -323,3 +323,6 @@ body {
 .d-title .mantine-Badge-root {
   flex: none;
 }
+.related-grid {
+  grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+}

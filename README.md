@@ -33,7 +33,7 @@ GUI 统一使用 dark theme，保留固定顶栏与侧栏的 Mantine AppShell，
 
 - 普通关键词之间取交集；`artist:name`、`group:name`、`series:name`、`character:name`、`language:japanese`、`type:manga`、`tag:name`、`female:name`、`male:name` 支持标签搜索。
 - 标签值中的空格使用下划线：`artist:some_artist`。以 `-` 排除词，例如 `language:japanese -tag:anthology`。
-- 支持 gallery ID 和作品链接打开详情。分页失败时保留成功卡片，可重试当前页。
+- 支持 gallery ID 和作品链接打开详情。详情抽屉底部显示 Hitomi 的“相关作品”（gallery 信息中的 `related`，最多 40 个），可继续点开并返回上一个作品。分页失败时保留成功卡片，可重试当前页。
 - 默认同时处理 2 个作品，每个作品最多 4 页并发；HTTP 请求全局按至少 200ms 间隔发出，避免瞬间冲击上游。
 - 网络错误、408、429、5xx 最多尝试 4 次，使用 exponential backoff 和 jitter，并尊重 `Retry-After`（超过 60 秒的要求会返回可重试错误）。
 - 优先尝试 metadata 中源文件的原始格式。原始格式返回 403/404 时强制刷新 `gg.js` 重试，仍不可用才尝试可用的 JXL、AVIF、WebP。衍生格式顺序是固定回退顺序，并不保证其编码画质高低；不在客户端重新编码。

@@ -46,13 +46,16 @@ export function Cover({
   src,
   alt,
   className,
+  onClick,
 }: {
   src: string;
   alt: string;
   className?: string;
+  onClick?: () => void;
 }) {
   return (
     <Image
+      onClick={onClick}
       className={`cover ${className || ""}`}
       src={src}
       alt={alt}

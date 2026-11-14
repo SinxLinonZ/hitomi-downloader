@@ -103,6 +103,7 @@ func (s *Server) Handler() http.Handler {
 		}
 		jsonOut(w, json.RawMessage(g.Raw))
 	})
+	mux.HandleFunc("GET /api/v1/galleries/{id}/related", s.related)
 	mux.HandleFunc("GET /api/v1/covers/{id}", s.cover)
 	mux.HandleFunc("GET /api/v1/downloads", func(w http.ResponseWriter, r *http.Request) { jsonOut(w, s.Downloads.List()) })
 	mux.HandleFunc("POST /api/v1/downloads/pause-all", func(w http.ResponseWriter, r *http.Request) {
@@ -437,15 +438,22 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	if end > len(ids) {
 		end = len(ids)
 	}
-	type item struct {
-		ID      int             `json:"id"`
-		Gallery json.RawMessage `json:"gallery,omitempty"`
-		Error   string          `json:"error,omitempty"`
-	}
-	items := make([]item, end-start)
+	items := s.galleryItems(ctx, ids[start:end])
+	jsonOut(w, map[string]any{"session": sessionID, "page": page, "total": len(ids), "items": items})
+}
+
+type galleryItem struct {
+	ID      int             `json:"id"`
+	Gallery json.RawMessage `json:"gallery,omitempty"`
+	Error   string          `json:"error,omitempty"`
+}
+
+// 複数の gallery 情報を並行取得する。個別の失敗は項目ごとの error に入れ、他の結果は保持する。
+func (s *Server) galleryItems(ctx context.Context, ids []int) []galleryItem {
+	items := make([]galleryItem, len(ids))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 6)
-	for i, id := range ids[start:end] {
+	for i, id := range ids {
 		wg.Add(1)
 		go func(i, id int) {
 			defer wg.Done()
@@ -453,7 +461,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 			case sem <- struct{}{}:
 				defer func() { <-sem }()
 			case <-ctx.Done():
-				items[i] = item{ID: id, Error: ctx.Err().Error()}
+				items[i] = galleryItem{ID: id, Error: ctx.Err().Error()}
 				return
 			}
 			g, e := s.Client.Gallery(ctx, id)
@@ -466,7 +474,37 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		}(i, id)
 	}
 	wg.Wait()
-	jsonOut(w, map[string]any{"session": sessionID, "page": page, "total": len(ids), "items": items})
+	return items
+}
+
+// 作品詳細に表示する関連作品（gallery 情報の related）を返す。
+func (s *Server) related(w http.ResponseWriter, r *http.Request) {
+	id, e := strconv.Atoi(r.PathValue("id"))
+	if e != nil || id <= 0 {
+		fail(w, fmt.Errorf("无效 ID"))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+	g, e := s.Client.Gallery(ctx, id)
+	if e != nil {
+		fail(w, e)
+		return
+	}
+	var meta struct {
+		Related []int `json:"related"`
+	}
+	ids := []int{}
+	if json.Unmarshal(g.Raw, &meta) == nil {
+		seen := map[int]bool{id: true}
+		for _, v := range meta.Related {
+			if v > 0 && !seen[v] && len(ids) < 40 {
+				seen[v] = true
+				ids = append(ids, v)
+			}
+		}
+	}
+	jsonOut(w, map[string]any{"items": s.galleryItems(ctx, ids)})
 }
 func (s *Server) cover(w http.ResponseWriter, r *http.Request) {
 	id, e := strconv.Atoi(r.PathValue("id"))

@@ -109,6 +109,29 @@ test("搜索保留正常作品，并显示失败卡片与恢复操作", async ({
     }),
   );
   await page.route("**/api/v1/covers/**", (route) => route.abort());
+  await page.route("**/api/v1/galleries/7/related", (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            id: 9,
+            gallery: {
+              id: 9,
+              title: "Related Work",
+              japanese_title: "関連作品のタイトル",
+              language: "japanese",
+              type: "manga",
+              files: [{ name: "p.png", width: 100, height: 100 }],
+            },
+          },
+          { id: 10, error: "获取信息超时" },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/v1/galleries/9/related", (route) =>
+    route.fulfill({ json: { items: [] } }),
+  );
   await page.getByLabel("关键词与标签").fill("test");
   await page.getByRole("button", { name: "搜索", exact: true }).click();
   await expect(page.locator(".gallery-title")).toHaveText("原文の作品名");
@@ -122,6 +145,19 @@ test("搜索保留正常作品，并显示失败卡片与恢复操作", async ({
     details.getByRole("heading", { name: "原文の作品名", exact: true }),
   ).toBeVisible();
   await expect(details.locator(".work-title-secondary")).toHaveText("测试作品");
+  // 関連作品：一覧に表示され、開くと詳細が切り替わり、戻れる。
+  const related = details.getByRole("region", { name: "相关作品" });
+  await expect(related.getByText("相关作品（2）")).toBeVisible();
+  await expect(related.getByText("获取信息超时")).toBeVisible();
+  await related.locator(".gallery-title").click();
+  await expect(
+    details.getByRole("heading", { name: "関連作品のタイトル", exact: true }),
+  ).toBeVisible();
+  await expect(details.getByText("没有相关作品。")).toBeVisible();
+  await details.getByRole("button", { name: "返回上一个作品" }).click();
+  await expect(
+    details.getByRole("heading", { name: "原文の作品名", exact: true }),
+  ).toBeVisible();
   await page.keyboard.press("Escape");
   await page.screenshot({ path: join(root, "search.png"), fullPage: true });
 });
