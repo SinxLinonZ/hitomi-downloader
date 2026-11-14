@@ -1,10 +1,16 @@
 # Hitomi Local
 
-Go CLI 启动本地 HTTP GUI，前端使用 React、TypeScript 和 Mantine。所有源代码与生成产物位于本目录。
+**English** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
-## 构建与运行
+A Go CLI that starts a local HTTP GUI (React, TypeScript and Mantine). The frontend is embedded in the Go binary, so you ship and run a single executable.
 
-需要 Go 1.23+、Node.js 20.19+ 或 22.12+。
+Prebuilt Linux / Windows / macOS binaries are available on the [Releases](https://github.com/SinxLinonZ/hitomi-downloader/releases) page.
+
+> Note: the GUI text is currently in Simplified Chinese. Button and menu names in this document are translated to describe them.
+
+## Build and run
+
+Requires Go 1.23+ and Node.js 20.19+ or 22.12+.
 
 ```sh
 cd web
@@ -15,58 +21,58 @@ go build -o hitomi-downloader ./cmd/hitomi-downloader
 ./hitomi-downloader
 ```
 
-启动后自动打开默认浏览器。也可以打开终端打印的链接。前端产物已嵌入 binary，发布时只需分发该 binary，无需安装 Node.js。
+Your default browser opens automatically; you can also open the link printed in the terminal. The frontend is embedded in the binary, so distributing the binary is enough and Node.js is not needed at runtime.
 
 ```sh
 ./hitomi-downloader --port 8080 --download-dir /absolute/path/to/downloads
 ./hitomi-downloader --proxy http://127.0.0.1:7890
-./hitomi-downloader --lan   # 允许同一局域网的手机打开阅读页
+./hitomi-downloader --lan   # let a phone on the same LAN open the reader page
 ./hitomi-downloader --proxy direct --no-open --data-dir /absolute/path/to/state
 ```
 
-默认监听 `127.0.0.1` 的随机端口。默认下载目录为工作目录下的 `downloads`，配置与任务记录在 `data`；GUI 保存的下载路径会在下一次启动时恢复，CLI 的 `--download-dir` 可覆盖它。Proxy 默认遵循 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY` 环境变量。CLI session 链接用于建立本机 HTTP-only cookie，重启后请使用新链接。
+By default it listens on a random port of `127.0.0.1`. The default download directory is `downloads` under the working directory; configuration and task records live in `data`. A download path saved in the GUI is restored on the next start, and the CLI `--download-dir` overrides it. The proxy follows the `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` environment variables by default. The session link printed by the CLI establishes a local HTTP-only cookie; use the new link after every restart.
 
-GUI 统一使用 dark theme，保留固定顶栏与侧栏的 Mantine AppShell，移动端通过左上角按钮展开导航。内容区按高密度设计：页面标题与说明合并为一行；各页的搜索与筛选工具栏固定在顶部；搜索结果为封面网格，下载队列为紧凑表格（带“全部 / 进行中 / 待恢复 / 已完成”筛选，每页 100 项），已下载为每页 50 项的双列列表。按 `/` 可聚焦当前页面的搜索框。顶栏“停止服务”和终端 Ctrl+C / SIGTERM 使用相同的退出流程：通知所有已连接页面停止 SSE 重连、取消正在处理的 HTTP 请求、暂停下载并保存进度，再排空连接并退出。停止后页面会禁用操作；重新使用时运行 CLI 并打开新的启动链接。
+The GUI uses a dark theme and keeps the Mantine AppShell with a fixed header and sidebar (on mobile the sidebar opens from the button at the top left). The content area is dense: the page title and description share one line, each page's search/filter toolbar is pinned to the top, search results are a cover grid, the download queue is a compact table (filters: All / Active / Resumable / Completed, 100 rows per page), and "Downloaded" is a two-column list with 50 items per page. Press `/` to focus the search box of the current page. The "Stop service" button in the header and Ctrl+C / SIGTERM in the terminal use the same shutdown flow: connected pages are told to stop reconnecting SSE, in-flight HTTP requests are cancelled, downloads are paused with their progress saved, then connections are drained and the process exits. After stopping, the page disables its actions; run the CLI again and open the new link to continue.
 
-任务状态通过 SSE 推送：仅在任务列表变化时发送，空闲时每 15 秒发送一次 keep-alive。
+Task state is pushed over SSE only when the task list changes, with a keep-alive every 15 seconds while idle.
 
-## 手机阅读页
+## Mobile reader page
 
-`/reader` 是面向手机的阅读页，只做三件事：浏览已下载的作品（双列封面，滚动加载）、筛选（关键词，以及底部抽屉里的多标签筛选，标签需同时满足）、排序（列表右上角的下拉框：最近下载 / 最早下载 / 最近更新，默认最近下载，选择会记在这台手机上）、阅读。
+`/reader` is a phone-oriented reader page. It does four things: browse downloaded works (two-column covers, infinite scroll), filter them (keywords, plus a bottom drawer with multi-tag filtering where all selected tags must match), sort them (dropdown at the top right of the list: Newest download / Oldest download / Recently updated; default is newest download and the choice is remembered on that phone), and read them.
 
-返回：作品和筛选抽屉都会在浏览器历史里占一条记录（URL hash `#/w/ID`、`#/filter`），所以手机的返回手势/按键与页面里的“返回”按钮都只会关闭它们并回到列表。刷新后或用链接直接打开作品时，“返回”按钮会把当前记录换成列表，不会跳到别的页面。
+Back navigation: a work and the filter drawer each take one entry in the browser history (URL hash `#/w/ID`, `#/filter`), so the phone's back gesture/key and the in-page "back" button only close them and return to the list. After a reload, or when a work is opened directly from a link, the "back" button replaces the current entry with the list instead of leaving the page.
 
-- **阅读**：默认纵向滚动，只在当前页前后加载图片（页数很多的作品也不占太多内存），可用底部滑块跳页；也可切换为“翻页”模式，点击屏幕左右侧或左右滑动翻页，并可切换右开。轻点屏幕中间显示或隐藏工具栏。阅读位置和显示设置只保存在这台手机的浏览器里，列表中会显示“读到 n/总页数”。
-- **图片来源**：读取本地已下载的图片，不访问 Hitomi。浏览器不支持的格式（例如部分环境下的 JXL）会显示为缺失页。旧格式（未迁移）的作品也能阅读。
-- **封面**：优先使用搜索页已缓存的缩略图，没有时使用作品的第一页，所以首次打开列表时封面可能较大。
+- **Reading**: vertical scroll by default; only the images around the current page are loaded (so works with many pages stay light on memory), and a bottom slider jumps between pages. You can switch to "paged" mode, where tapping the left/right side of the screen or swiping turns pages and right-to-left reading can be toggled. Tap the middle of the screen to show or hide the toolbar. The reading position and display settings are stored only in that phone's browser, and the list shows "read n/total".
+- **Image source**: local downloaded images only; Hitomi is not contacted. Formats the browser cannot show (e.g. JXL in some environments) appear as missing pages. Works in the legacy format (not yet migrated) can also be read.
+- **Covers**: the thumbnail cached by the search page is used first, otherwise the first page of the work, so covers can be large the first time the list opens.
 
-### 让手机访问
+### Letting a phone connect
 
-默认只监听本机，手机访问不到。需要时以 `--lan` 启动：
+By default only the local machine can connect. Start with `--lan` when needed:
 
 ```sh
 ./hitomi-downloader --lan
 ```
 
-终端会打印手机用的链接，GUI 的“设置”里也会显示链接和二维码。手机扫码或打开链接即可（要与电脑在同一局域网）。安全设计：
+The terminal prints a link for the phone, and the GUI "Settings" dialog shows the link and a QR code. Scan it or open the link (the phone must be on the same LAN as the computer). Security design:
 
-- 链接里的是**阅读专用口令**，与管理用的启动口令不同，保存在 `data/reader-token`（重启后链接不变，删除该文件并重启即可重置）。它只能访问阅读页和阅读接口，不能下载、验证、迁移或修改设置。
-- 来自其他设备的请求一律没有管理权限：即使拿到管理口令或 Cookie，也只能用阅读页。管理界面首页会被重定向到 `/reader`。
-- 局域网内使用的是明文 HTTP，口令不加密传输，请只在可信的家庭网络里使用；阅读页的接口只返回作品信息和图片，不暴露文件路径。
-- 不加 `--lan` 时行为与以前完全相同：只监听 `127.0.0.1`。
+- The link carries a **reader-only token**, different from the admin start-up token. It is stored in `data/reader-token` (the link stays the same across restarts; delete the file and restart to reset it). It can only reach the reader page and its API; it cannot download, verify, migrate or change settings.
+- Requests from other devices never get admin rights: even with the admin token or cookie they can only use the reader. The admin home page is redirected to `/reader`.
+- LAN access uses plain HTTP, so the token is not encrypted in transit. Use it only on a trusted home network. The reader API returns only work information and images and does not expose file paths.
+- Without `--lan` the behaviour is unchanged: it listens on `127.0.0.1` only.
 
-## 搜索与下载
+## Search and download
 
-- 普通关键词之间取交集；`artist:name`、`group:name`、`series:name`、`character:name`、`language:japanese`、`type:manga`、`tag:name`、`female:name`、`male:name` 支持标签搜索。
-- 标签值中的空格使用下划线：`artist:some_artist`。以 `-` 排除词，例如 `language:japanese -tag:anthology`。
-- 支持 gallery ID 和作品链接打开详情。详情抽屉底部显示 Hitomi 的“相关作品”（gallery 信息中的 `related`，最多 40 个），可继续点开并返回上一个作品。分页失败时保留成功卡片，可重试当前页。
-- 默认同时处理 2 个作品，每个作品最多 4 页并发；两者都可在 GUI“设置”中修改（同时任务数 1–8，每任务并发文件数 1–16），也可用 `--task-concurrency`、`--page-concurrency` 启动参数覆盖，并保存在 `data/config.json`。任务数对排队中的任务立即生效；文件并发数对新开始或继续的任务生效。HTTP 请求仍全局按至少 200ms 间隔发出，避免瞬间冲击上游，因此并发数调得过高不会成比例提速。迁移任务是纯本地 I/O，使用独立的并发（4 个任务，每个任务 8 页），不受上述设置影响。
-- 网络错误、408、429、5xx 最多尝试 4 次，使用 exponential backoff 和 jitter，并尊重 `Retry-After`（超过 60 秒的要求会返回可重试错误）。
-- 优先尝试 metadata 中源文件的原始格式。原始格式返回 403/404 时强制刷新 `gg.js` 重试，仍不可用才尝试可用的 JXL、AVIF、WebP。原始格式（以及 JXL）所用的主机名若无法解析（DNS 不存在），同样视为该格式不可用并立即回退，不做重试等待；本机实测 `1.`、`2.`、`j1.` 开头的 `gold-usergeneratedcontent.net` 域名不存在，而 `w1.`（WebP）、`a1.`（AVIF）可解析，因此目前实际会回退到 AVIF 或 WebP，并在 metadata 中记录回退原因。衍生格式顺序是固定回退顺序，并不保证其编码画质高低；不在客户端重新编码。
-- 网络超时或 5xx 不触发格式降级。页面格式、回退原因和源 hash 都保存在 metadata 中。
-- 暂停或取消会停止请求，保留完整页面。恢复时核对页面 SHA-256，仅重新下载未完成或损坏的页面；不进行单张图片的字节级 Range 续传。暂停、取消、退出和崩溃都不会删除已完成的页面；写到一半的页面只存在于临时文件 `.page-*.part` 中，不会被当作完成，并在下次开始任务时清理。
+- Plain keywords are intersected. `artist:name`, `group:name`, `series:name`, `character:name`, `language:japanese`, `type:manga`, `tag:name`, `female:name` and `male:name` search by tag.
+- Use underscores for spaces in tag values: `artist:some_artist`. Prefix a term with `-` to exclude it, e.g. `language:japanese -tag:anthology`.
+- A gallery ID or a work link opens the detail view. At the bottom of the detail drawer are Hitomi's "related works" (the `related` field of the gallery info, up to 40); you can open one and go back to the previous work. When a page of results partly fails, the successful cards are kept and the page can be retried.
+- By default 2 works are processed at once, each with up to 4 pages in parallel. Both are configurable in the GUI "Settings" (concurrent tasks 1–8, files per task 1–16) or with the `--task-concurrency` and `--page-concurrency` flags, and are saved to `data/config.json`. The task limit takes effect immediately for queued tasks; the per-task file limit applies to tasks that are newly started or resumed. HTTP requests are still spaced at least 200 ms apart globally so the upstream is not hit in bursts, hence a very high concurrency does not speed things up proportionally. Migration tasks are pure local I/O and use their own concurrency (4 tasks, 8 pages each), unaffected by these settings.
+- Network errors, 408, 429 and 5xx are tried up to 4 times with exponential backoff and jitter, honouring `Retry-After` (a demand longer than 60 seconds returns a retryable error).
+- The original format of the source file in the metadata is tried first. On 403/404 for the original format, `gg.js` is force-refreshed and retried; only if it is still unavailable are the available JXL, AVIF and WebP tried. If the host name used for the original format (or JXL) cannot be resolved (no DNS record), that format is likewise treated as unavailable and the fallback happens immediately without retry waits. On the machine used for testing, the `gold-usergeneratedcontent.net` hosts starting with `1.`, `2.` and `j1.` do not exist, while `w1.` (WebP) and `a1.` (AVIF) resolve, so in practice the download currently falls back to AVIF or WebP and the reason is recorded in the metadata. The order of derived formats is a fixed fallback order and does not imply higher quality; images are not re-encoded on the client.
+- Network timeouts and 5xx do not trigger a format downgrade. The page format, the fallback reason and the source hash are all stored in the metadata.
+- Pausing or cancelling stops requests and keeps completed pages. On resume, page SHA-256 values are checked and only incomplete or damaged pages are downloaded again; there is no byte-level Range resume of a single image. Pause, cancel, exit and crash never delete completed pages; a half-written page exists only as a temporary `.page-*.part` file, is never treated as complete, and is cleaned up the next time the task starts.
 
-## 文件布局与恢复
+## File layout and recovery
 
 ```text
 downloads/
@@ -83,64 +89,64 @@ data/
   covers/12345.webp
 ```
 
-`metadata.json` 包含原始 gallery 信息（保留所有上游字段）、每页文件名、源 hash、实际格式、字节数、本地 SHA-256 和更新时间。任务进度保存在独立 JSON 中，已下载列表通过扫描当前下载目录的 metadata 获取，不依赖数据库。JSON 和图片均先写临时文件后 rename，不删除已有完成目录。
+`metadata.json` contains the raw gallery info (all upstream fields kept), the file name of each page, the source hash, the actual format, the byte size, the local SHA-256 and the update time. Task progress is stored in separate JSON files; the "Downloaded" list is built by scanning the metadata in the current download directory, with no database. JSON and images are written to a temporary file and then renamed, and existing completed directories are never deleted.
 
-在 GUI 设置中修改下载目录，然后打开“已下载”。后台扫描会逐步展示发现的作品，显示当前目录、已检查目录数和读取警告，可取消；找到作品 metadata 后不再枚举该目录中的所有图片或子目录。应用运行期间复用内存索引，切换页面不会重新扫描，手动“重新扫描”刷新索引；重启程序后重新发现文件。网络挂载的操作系统 I/O 不能被 Go 强制中断，取消请求会在当前 I/O 返回后生效。
+Change the download directory in the GUI settings, then open "Downloaded". A background scan reveals works as they are found and shows the current directory, the number of directories checked and read warnings; it can be cancelled. Once a work's metadata is found, the images and sub-directories inside it are not enumerated. The in-memory index is reused while the app runs, so switching pages does not rescan; "Rescan" refreshes the index manually, and files are rediscovered after a restart. OS I/O on network mounts cannot be interrupted by Go, so a cancel takes effect after the current I/O returns.
 
-已下载页面采用每页 50 项的列表（宽屏双列），包含本地首张图片的懒加载封面、标题、作者、语言、页数和格式。支持按标题、作者或 ID 筛选、按 metadata 格式筛选和跨页勾选。支持按“最近更新”或“下载时间”（新→旧 / 旧→新）排序：下载时间取作品目录的创建时间（macOS / Windows 读取 birthtime，其他系统退而使用目录修改时间），不受之后验证改写 `metadata.json` 的影响。封面不依赖 Hitomi 在线；JXL 无浏览器支持时显示占位图。 列表显示完整 namespace 的 tags（`female`、`male`、普通 `tag`），点击标签直接加入筛选；标签较多时可展开。搜索框明确标为“搜索已下载”，输入后自动在本地索引中搜索标题、作者、ID 和标签，多个词取交集，支持 `female:glasses`、`female:long_hair`、`-tag:digital` 等条件。独立的可搜索标签多选框显示作品计数，多标签按 AND 组合，可与文字和 metadata 格式同时筛选。新下载与旧数据迁移都完整保留 `metadata.json` 中的 `gallery.tags` 原始字段；搜索使用规范化索引，不会改写或删减原始 tags。
+The "Downloaded" page is a list of 50 items per page (two columns on wide screens), with a lazily loaded cover from the first local image, title, artists, language, page count and format. You can filter by title, artist or ID, filter by metadata format, and select across pages. Sorting is by "Recently updated" or by "Download time" (newest→oldest / oldest→newest). Download time is the creation time of the work directory (birthtime on macOS and Windows; elsewhere the directory modification time is used instead), so it is not affected by later verification rewriting `metadata.json`. Covers do not need Hitomi to be online; a placeholder is shown when the browser cannot display JXL. The list shows full-namespace tags (`female`, `male`, plain `tag`); clicking a tag adds it to the filter, and long tag lists can be expanded. The search box is labelled "Search downloaded" and searches titles, artists, IDs and tags in the local index as you type; multiple terms are intersected, and conditions such as `female:glasses`, `female:long_hair` and `-tag:digital` are supported. A separate searchable multi-select of tags shows work counts; tags combine with AND and can be used together with text and the metadata-format filter. Both new downloads and migrated old data keep the original `gallery.tags` field in `metadata.json` intact; search uses a normalized index and never rewrites or trims the original tags.
 
-新格式支持逐作品“验证并补全”、勾选批量验证和“验证全部”。验证分两层：
+For the new format, "Verify and complete" works per work, in batches for selected works, and as "Verify all". Verification has two layers:
 
-1. **本地完整性（离线）**：核对 metadata 中预期页数、文件大小和 SHA-256。刚迁移的页面尚无 SHA-256 基线，会先做签名与完整解码检查，再确定基线。
-2. **对比 Hitomi（联网）**：每个作品请求一次 gallery 信息，按页比较源 hash（它标识原图本身，与本地是 webp、avif 还是原图无关）。
+1. **Local integrity (offline)**: checks the expected page count, file sizes and SHA-256 recorded in the metadata. Pages that were just migrated have no SHA-256 baseline yet, so they first get a signature and full-decode check, and then the baseline is set.
+2. **Comparison with Hitomi (online)**: one gallery-info request per work; the source hash of each page is compared (it identifies the original image itself, regardless of whether the local file is webp, avif or the original).
 
-两层结果合并后区分“本地损坏”和“上游更新”：
+The two layers are combined to tell "local damage" from "upstream update":
 
-| 本地页面 | 上游 hash | 结果 |
+| Local page | Upstream hash | Result |
 | --- | --- | --- |
-| 正常 | 一致 | 正常 |
-| 缺失或损坏 | 一致 | 本地损坏，自动补下 |
-| 任意 | 不一致 | 上游替换了该页：只报告，不覆盖、不再下载旧版 |
-| — | 上游多出页面 | 上游新增：只报告 |
-| 有 | 上游没有 | 上游删除：只报告，不删除本地文件 |
-| — | gallery 404 | 上游已删除作品：只标记，本地内容保持不变，也无法补全缺页 |
-| — | 网络或协议错误 | 未知：仅完成本地校验，不改变已有的上游状态 |
+| OK | Same | OK |
+| Missing or damaged | Same | Local damage; downloaded again automatically |
+| Any | Different | Upstream replaced the page: reported only; the local file is not overwritten and the old version is not downloaded |
+| — | Upstream has extra pages | Upstream added pages: reported only |
+| Present | Upstream lacks it | Upstream removed the page: reported only; local files are not deleted |
+| — | Gallery returns 404 | Work deleted upstream: only marked; local content is untouched, and missing pages cannot be completed |
+| — | Network or protocol error | Unknown: only the local check is done and the existing upstream state is not changed |
 
-上游状态保存在 `metadata.json` 的 `upstream` 字段，“已下载”列表显示“上游有更新 / 上游已删除”，并可按“上游有更新 / 已删除”筛选。仅标题、标签等 metadata 的变化不算差异，也不会改写本地 metadata。
+The upstream state is stored in the `upstream` field of `metadata.json`. The "Downloaded" list shows "Upstream updated / Upstream deleted" and can be filtered by them. Changes that only affect metadata such as title or tags are not counted as differences and never rewrite the local metadata.
 
-“应用上游更新”（单项、勾选后批量）才会修改本地内容：被替换或删除的旧页面移动到 `superseded/<时间>/`（不删除），下载替换页与新增页，并把 gallery 信息更新为上游版本。
+Only "Apply upstream update" (per work, or in batch after selecting) changes local content: replaced or removed old pages are moved to `superseded/<time>/` (never deleted), the replacement and new pages are downloaded, and the gallery info is updated to the upstream version.
 
-联网对比的请求最多尝试 2 次；一旦连接失败，之后 1 分钟内的验证直接跳过联网对比，避免批量验证时逐个等待。无法联网时，完整的作品仍可完成本地校验，缺失页面需要联网才能补全。任务详情显示具体失败页，网络恢复后点击“继续 / 重试”。
+The online comparison is tried at most 2 times; once a connection fails, online comparison is skipped for the following minute so a batch verification does not wait on every work. Without network access, complete works can still pass the local check, but missing pages need network access to be completed. The task detail shows exactly which pages failed; click "Resume / Retry" when the network is back.
 
-程序退出或崩溃后，未完成任务恢复为暂停状态。更换下载目录后，旧目录的未完成任务需切回原目录才能继续；移动后的完整作品可直接在新目录扫描和验证。同一 gallery ID 同时只执行一个任务。
+After the program exits or crashes, unfinished tasks come back as paused. After changing the download directory, unfinished tasks of the old directory must be resumed after switching back to it; complete works that were moved can be scanned and verified directly in the new directory. Only one task runs per gallery ID at a time.
 
-下载队列按“处理中 → 排队中 → 暂停/失败/已取消 → 已完成”分组，处理中和排队中按加入队列的先后排列，不随进度变化而跳动。已经在下载目录中的作品不能再次“下载”：搜索结果、相关作品和详情里的下载按钮会置灰（悬停显示“已下载”或“已在下载队列中”），服务端也会以 409 `ALREADY_DOWNLOADED` 拒绝，需要补全请使用“验证”。判断依据是已扫描的本地索引（扫描未完成时只拦截已发现的作品），且会确认目录仍然存在。
+The download queue is grouped as "Processing → Queued → Paused/Failed/Cancelled → Completed"; processing and queued tasks are ordered by when they were queued, so rows do not jump around as progress changes. A work that is already in the download directory cannot be "downloaded" again: the download button in search results, related works and the detail view is greyed out (hover shows "Downloaded" or "Already in the download queue"), and the server also rejects it with 409 `ALREADY_DOWNLOADED`; use "Verify" if you need to complete it. The decision is based on the scanned local index (while the scan is still running only works already discovered are blocked), and it confirms that the directory still exists.
 
-所有批量操作（全部开始 / 全部暂停 / 移除已完成任务，以及已下载页的全部迁移、验证全部、迁移所选、验证所选、应用上游更新）都会先弹出确认框，写明数量和影响；默认焦点在“取消”上，取消不会向服务端发送任何请求。单个作品上的操作不需要确认。
+Every batch operation (Resume all / Pause all / Remove completed tasks, and on the Downloaded page Migrate all, Verify all, Migrate selected, Verify selected and Apply upstream update) first shows a confirmation dialog that states the count and the effect. The default focus is on "Cancel", and cancelling sends nothing to the server. Operations on a single work need no confirmation.
 
-下载队列支持“全部暂停”“全部开始”“隐藏已完成”和“移除已完成任务”。全部暂停作用于排队及运行中的下载、迁移和校验任务；全部开始恢复暂停、失败和已取消的未完成任务，跳过已完成或已在运行的任务。暂停后立即全部开始会先等待旧 worker 结束，避免同一任务重复处理；下载目录不匹配等失败会逐项报告。
+The download queue supports "Pause all", "Resume all", "Hide completed" and "Remove completed tasks". Pause all affects queued and running download, migration and verification tasks; Resume all restarts paused, failed and cancelled unfinished tasks and skips completed or already running ones. Pressing Resume all right after Pause all first waits for the old workers to end, so the same task is never processed twice; failures such as a mismatched download directory are reported per task.
 
-“隐藏已完成”只影响队列显示。“移除已完成任务”仅删除 `data/tasks/{id}.json` 任务记录和内存中的对应任务，不访问下载目录，不删除图片或作品 metadata，也不会从“已下载”列表移除作品。未完成任务不会被清理；已完成记录在 worker 最后一次保存结束后才可移除，重启后不会恢复已移除的记录。
+"Hide completed" only affects what the queue displays. "Remove completed tasks" only deletes the `data/tasks/{id}.json` task records and the matching in-memory tasks; it does not touch the download directory, does not delete images or work metadata, and does not remove works from the "Downloaded" list. Unfinished tasks are never cleaned up; a completed record can only be removed after its worker has finished its last save, and removed records do not come back after a restart.
 
-参考 Tauri 下载器的平铺 `metadata.json` 只识别为“待迁移”，扫描和验证入口不会自动改写。点击单项“迁移”、勾选后“迁移所选”、“迁移本页旧格式”或顶部“全部迁移”后，任务只检查现有图片的文件大小、格式签名和图片头（不读取全部内容，因此在网络盘上也较快；迁移任务并发度高于下载任务），不重新下载、不修改图片；SHA-256 基线推迟到该作品第一次“验证并补全”时确定。完成前检查 metadata 未被其他程序更改，原文件保存在 `metadata.legacy.json`，新 metadata 原子写入；已有不同备份时停止迁移并报错。旧字段（例如 camelCase 标题和字符串作者列表）转换为新结构，并保留原字段信息。 “全部迁移”需等待扫描完成，覆盖当前下载目录的全部旧 metadata，不受筛选与分页限制；先固定目标快照、跳过已有活动任务，再每批 100 项加入队列，迁移进度仍在下载队列中查看。
+The flat `metadata.json` written by the reference Tauri downloader is recognised only as "to migrate"; scanning and verification never rewrite it automatically. After clicking "Migrate" on one work, "Migrate selected", "Migrate legacy on this page" or "Migrate all" at the top, the task only checks the file size, format signature and image header of the existing images (it does not read the whole content, so it is fast even on network drives; migration tasks run with higher concurrency than downloads); it does not download again or modify images. The SHA-256 baseline is deferred until that work's first "Verify and complete". Before finishing, it checks that the metadata was not changed by another program, saves the original file as `metadata.legacy.json`, and writes the new metadata atomically; if a different backup already exists, the migration stops with an error. Old fields (for example camelCase titles and string author lists) are converted to the new structure while keeping the original field information. "Migrate all" waits for the scan to finish and covers all legacy metadata in the current download directory regardless of filters and paging; it fixes a snapshot of targets, skips works that already have an active task, then enqueues them in batches of 100, and the progress is still seen in the download queue.
 
-旧图片缺失、损坏或同一页存在多个格式时，迁移会记录具体页和警告，保留原图片；后续从“已下载”验证并补全。暂停或取消迁移会保留旧 metadata，恢复时重新读取本地图片；提交 metadata 后发生退出也可恢复任务状态。迁移不会提高旧图片的编码质量，也不再保证旧下载器可读取新 metadata。Node 脚本导出的 gallery JSON 不是完整下载目录，不直接导入。
+When an old image is missing, damaged, or a page exists in several formats, the migration records the specific page and a warning and keeps the original image; verify and complete it later from "Downloaded". Pausing or cancelling a migration keeps the old metadata, and resuming re-reads the local images; the task state can also be recovered if the program exits after the metadata was committed. Migration does not improve the encoding quality of old images, and the old downloader is no longer guaranteed to read the new metadata. A gallery JSON exported by a Node script is not a complete download directory and is not imported directly.
 
-本地 SHA-256 用于发现下载完成后的文件变化，不代表上游图片的远程真实性证明。源 hash 与本地文件 SHA-256 分开存储。JPEG、PNG、GIF 下载时进行完整解码检查；WebP、AVIF、JXL 检查文件签名和响应长度，后续均使用 SHA-256 检查文件变化。metadata 本身损坏时无法可靠推断页清单，需先恢复 metadata；不会擅自覆盖无法识别的目录。
+The local SHA-256 is for detecting changes to a file after download; it is not proof of the remote authenticity of the upstream image. The source hash and the local file SHA-256 are stored separately. JPEG, PNG and GIF are fully decoded when downloaded; WebP, AVIF and JXL are checked for file signature and response length, and later all of them are checked for changes with SHA-256. If the metadata itself is damaged, the page list cannot be inferred reliably, so the metadata must be restored first; directories that cannot be recognised are never overwritten.
 
-## 验证
+## Verification
 
 ```sh
-cd src
 go test -race ./...
 go vet ./...
 cd web
+npm ci
 npm run build
 npm test
 ```
 
-Playwright tests 启动真实 Go binary，覆盖目录扫描、离线校验、搜索局部失败和设置持久化，因此先执行上述构建。默认使用 macOS Chrome，可通过 `CHROME_PATH` 指定其他系统的 Chromium executable。测试使用临时 fixture 和 mock 搜索响应，不依赖 Hitomi 在线。受限环境如禁止 `/tmp` 默认路径，可设置 `TMPDIR=/private/tmp`；如果禁止绑定 localhost 端口，则浏览器测试无法启动，Go HTTP handlers 的测试仍可运行。
+The Playwright tests start the real Go binary and cover directory scanning, offline verification, partial search failures and settings persistence, so run the build above first (the binary embeds the frontend, so rebuild the binary after changing the frontend). Google Chrome on macOS is used by default; set `CHROME_PATH` to point at a Chromium executable on other systems. The tests use temporary fixtures and mocked search responses and do not depend on Hitomi being online. In restricted environments that forbid the default `/tmp` path, set `TMPDIR=/private/tmp`; if binding a localhost port is forbidden, the browser tests cannot start, but the Go HTTP handler tests still run.
 
-开发前端时，先通过 `--port 8080` 启动 Go 并在浏览器中打开 CLI 链接完成 session 初始化，再运行 `npm run dev` 并访问同一 hostname 的 Vite 页面。Vite 默认将 `/api` 转发至 `http://127.0.0.1:8080`，可通过 `HITOMI_BACKEND` 修改。浏览器中始终使用 `127.0.0.1`，保持 cookie 的 hostname 一致。
+When developing the frontend, first start Go with `--port 8080` and open the CLI link in the browser to initialise the session, then run `npm run dev` and visit the Vite page on the same hostname. Vite proxies `/api` to `http://127.0.0.1:8080` by default; change it with `HITOMI_BACKEND`. Always use `127.0.0.1` in the browser so that the cookie hostname stays the same.
 
-本轮真实上游联调受到执行环境 DNS 限制，动态域名和 `gg.js` 规则以 `ref` 中的协议实现为依据；协议发生变化时会给出明确解析错误，需更新 `internal/hitomi` 适配层。
+The dynamic host names and the `gg.js` routing rules follow the protocol implementation of another open-source downloader; when the protocol changes, a clear parse error is reported and the `internal/hitomi` adapter needs updating.
