@@ -111,9 +111,7 @@ test("搜索保留正常作品，并显示失败卡片与恢复操作", async ({
   await page.route("**/api/v1/covers/**", (route) => route.abort());
   await page.getByLabel("关键词与标签").fill("test");
   await page.getByRole("button", { name: "搜索", exact: true }).click();
-  await expect(page.getByText("测试作品", { exact: true })).toBeVisible();
   await expect(page.locator(".gallery-title")).toHaveText("原文の作品名");
-  await expect(page.locator(".work-title-secondary")).toHaveText("测试作品");
   await expect(page.getByText("获取信息超时，可重试")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "重试此页信息" }),

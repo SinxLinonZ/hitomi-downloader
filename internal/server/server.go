@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -298,6 +299,9 @@ func (s *Server) Handler() http.Handler {
 			_, _ = fmt.Fprint(w, "event: shutdown\ndata: {}\n\n")
 			f.Flush()
 		}
+		// 変化がない間は再送せず、15 秒ごとの keep-alive だけを送る。
+		var last []byte
+		lastWrite := time.Time{}
 		for {
 			select {
 			case <-s.shutdown:
@@ -305,12 +309,22 @@ func (s *Server) Handler() http.Handler {
 				return
 			default:
 			}
-			_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(5 * time.Second))
 			b, _ := json.Marshal(s.Downloads.List())
-			if _, e := fmt.Fprintf(w, "data: %s\n\n", b); e != nil {
-				return
+			if !bytes.Equal(b, last) || time.Since(lastWrite) >= 15*time.Second {
+				_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(5 * time.Second))
+				var e error
+				if bytes.Equal(b, last) {
+					_, e = fmt.Fprint(w, ": keep-alive\n\n")
+				} else {
+					_, e = fmt.Fprintf(w, "data: %s\n\n", b)
+				}
+				if e != nil {
+					return
+				}
+				f.Flush()
+				last = b
+				lastWrite = time.Now()
 			}
-			f.Flush()
 			select {
 			case <-s.shutdown:
 				notifyShutdown()

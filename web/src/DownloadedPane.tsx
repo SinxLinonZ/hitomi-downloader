@@ -1,34 +1,37 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
+  ActionIcon,
   Alert,
   Badge,
   Button,
   Checkbox,
-  Group,
-  Image,
   Loader,
   MultiSelect,
   Pagination,
   Paper,
   Select,
-  Stack,
   Text,
   TextInput,
-  Title,
+  Tooltip,
 } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconFileImport,
-  IconPhotoOff,
+  IconInfoCircle,
   IconRefresh,
   IconSearch,
   IconShieldCheck,
   IconX,
 } from "@tabler/icons-react";
 import { api, Entry, LibraryPage, Task } from "./api";
+import { Cover, Empty, errorText, report, titles } from "./common";
 
 type Batch = { accepted: string[]; errors: Record<string, string> };
+const PAGE_SIZE = 50;
+const MIGRATE_HINT =
+  "旧格式不会自动改写。迁移会备份原 metadata，读取现有图片并建立校验记录；缺失页面可在迁移后补全。";
+
 export function DownloadedPane({
   directory,
   tasks,
@@ -70,7 +73,7 @@ export function DownloadedPane({
       try {
         const params = new URLSearchParams({
           page: String(page),
-          pageSize: "20",
+          pageSize: String(PAGE_SIZE),
           q,
           kind: kind || "all",
         });
@@ -82,7 +85,7 @@ export function DownloadedPane({
           controller.signal,
         );
         if (!active) return;
-        const last = Math.max(1, Math.ceil(result.total / 20));
+        const last = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
         if (page > last) {
           setPage(last);
           return;
@@ -97,7 +100,7 @@ export function DownloadedPane({
         }
       } catch (e) {
         if (active && !controller.signal.aborted) {
-          setError(e instanceof Error ? e.message : String(e));
+          setError(errorText(e));
           setLoading(false);
         }
       }
@@ -109,24 +112,21 @@ export function DownloadedPane({
       clearTimeout(timer);
     };
   }, [directory, page, q, kind, tagFilters, revision, taskRevision, disabled]);
-  const report = (e: unknown) =>
-    notifications.show({
-      color: "red",
-      title: "操作未完成",
-      message: e instanceof Error ? e.message : String(e),
-      autoClose: false,
-    });
+
   const entries = data?.entries || [];
   const scanning = data?.scan.state === "running";
   const selectedEntries = Array.from(selected.values());
   const legacySelected = selectedEntries.filter((e) => e.legacy);
   const nativeSelected = selectedEntries.filter((e) => !e.legacy);
-  const busy = (entry: Entry) =>
-    tasks.some(
+  const taskOf = (entry: Entry) =>
+    tasks.find(
       (t) =>
         t.directory === entry.directory &&
         ["queued", "running"].includes(t.state),
     );
+  const busy = (entry: Entry) => !!taskOf(entry);
+  const filtered = !!query || tagFilters.length > 0 || kind !== "all";
+
   async function batch(
     op: "migrate" | "repair",
     values: Pick<Entry, "directory">[],
@@ -263,6 +263,23 @@ export function DownloadedPane({
       report(e);
     }
   }
+  async function cancelScan() {
+    try {
+      setCancelling(true);
+      await api("/library/scan/cancel", {});
+      setRevision((v) => v + 1);
+    } catch (e) {
+      setCancelling(false);
+      report(e);
+    }
+  }
+  const toggle = (entry: Entry) =>
+    setSelected((prev) => {
+      const next = new Map(prev);
+      if (next.has(entry.directory)) next.delete(entry.directory);
+      else next.set(entry.directory, entry);
+      return next;
+    });
   const pageSelected =
     entries.length > 0 && entries.every((e) => selected.has(e.directory));
   const tagOptions = (data?.tags || []).map((tag) => ({
@@ -273,425 +290,376 @@ export function DownloadedPane({
     if (!tagOptions.some((option) => option.value === value))
       tagOptions.push({ value, label: value });
   }
+  const addTagFilter = (value: string) => {
+    setTagFilters((previous) =>
+      previous.includes(value) ? previous : [...previous, value],
+    );
+    setPage(1);
+  };
+
   return (
-    <Stack gap="md">
-      <Paper withBorder p="md">
-        <Stack gap="sm">
-          <Group wrap="wrap" align="flex-end">
-            <TextInput
-              label="搜索已下载"
-              placeholder="标题、作者、ID 或 tag，如 female:glasses"
-              value={query}
-              onChange={(e) => {
-                setQuery(e.currentTarget.value);
-                setPage(1);
+    <>
+      <div className="sticky-head">
+        <div className="toolbar">
+          <TextInput
+            className="grow"
+            aria-label="搜索已下载"
+            placeholder="搜索已下载：标题、作者、ID 或 tag，如 female:glasses -tag:digital（按 / 聚焦）"
+            data-hotkey-search
+            value={query}
+            onChange={(e) => {
+              setQuery(e.currentTarget.value);
+              setPage(1);
+            }}
+            leftSection={<IconSearch size={14} />}
+          />
+          <Select
+            aria-label="metadata 格式筛选"
+            value={kind}
+            onChange={(v) => {
+              setKind(v);
+              setPage(1);
+            }}
+            allowDeselect={false}
+            data={[
+              { value: "all", label: "全部作品" },
+              { value: "legacy", label: "待迁移" },
+              { value: "native", label: "已使用新 metadata" },
+            ]}
+            w={150}
+          />
+          <MultiSelect
+            aria-label="标签筛选"
+            placeholder={tagFilters.length ? undefined : "标签筛选（需同时满足）"}
+            searchable
+            clearable
+            limit={50}
+            hidePickedOptions
+            nothingFoundMessage="没有匹配的标签"
+            data={tagOptions}
+            value={tagFilters}
+            onChange={(tags) => {
+              setTagFilters(tags);
+              setPage(1);
+            }}
+            w={260}
+          />
+          <Button
+            variant="default"
+            leftSection={<IconRefresh size={14} />}
+            disabled={scanning || queueing}
+            onClick={scan}
+          >
+            重新扫描
+          </Button>
+          <Button
+            variant="light"
+            leftSection={<IconFileImport size={14} />}
+            title="迁移当前下载目录中的所有旧 metadata，不受筛选或分页限制；请先完成扫描"
+            disabled={
+              !data ||
+              data.scan.state !== "completed" ||
+              data.legacyTotal === 0 ||
+              queueing
+            }
+            onClick={migrateAll}
+          >
+            全部迁移
+          </Button>
+          <Button
+            variant="light"
+            leftSection={<IconShieldCheck size={14} />}
+            disabled={
+              scanning ||
+              !data ||
+              data.scan.found - data.legacyTotal === 0 ||
+              queueing
+            }
+            onClick={verifyAll}
+          >
+            验证全部
+          </Button>
+        </div>
+        <div className="subbar">
+          <span>
+            {loading && !data ? (
+              <>
+                <Loader size={10} mr={6} />
+                正在读取目录…
+              </>
+            ) : data ? (
+              <>
+                {scanning ? "已发现" : "共"} {data.scan.found.toLocaleString()}{" "}
+                个作品
+                {data.legacyTotal > 0 && (
+                  <>
+                    {" · "}
+                    {data.legacyTotal.toLocaleString()} 个待迁移
+                    <Tooltip label={MIGRATE_HINT} multiline w={260}>
+                      <IconInfoCircle
+                        size={13}
+                        style={{ marginLeft: 4, verticalAlign: "-2px" }}
+                      />
+                    </Tooltip>
+                  </>
+                )}
+                {data.total !== data.scan.found &&
+                  ` · 筛选结果 ${data.total} 个`}
+                {queueProgress && ` · ${queueProgress}`}
+              </>
+            ) : null}
+          </span>
+          <div className="actions">
+            {(entries.length > 0 || selected.size > 0) && (
+              <>
+                <Checkbox
+                  size="xs"
+                  label={`选择本页${selected.size ? ` · 已选 ${selected.size} 项` : ""}`}
+                  checked={pageSelected}
+                  indeterminate={
+                    !pageSelected &&
+                    entries.some((e) => selected.has(e.directory))
+                  }
+                  onChange={() =>
+                    setSelected((prev) => {
+                      const next = new Map(prev);
+                      for (const e of entries) {
+                        if (pageSelected) next.delete(e.directory);
+                        else next.set(e.directory, e);
+                      }
+                      return next;
+                    })
+                  }
+                />
+                {legacySelected.length > 0 ? (
+                  <Button
+                    size="compact-xs"
+                    variant="light"
+                    disabled={queueing}
+                    onClick={() => batch("migrate", legacySelected)}
+                  >
+                    迁移所选（{legacySelected.length}）
+                  </Button>
+                ) : (
+                  entries.some((e) => e.legacy) && (
+                    <Button
+                      size="compact-xs"
+                      variant="light"
+                      disabled={queueing}
+                      onClick={() =>
+                        batch(
+                          "migrate",
+                          entries.filter((e) => e.legacy && !busy(e)),
+                        )
+                      }
+                    >
+                      迁移本页旧格式
+                    </Button>
+                  )
+                )}
+                {nativeSelected.length > 0 && (
+                  <Button
+                    size="compact-xs"
+                    variant="default"
+                    disabled={queueing}
+                    onClick={() => batch("repair", nativeSelected)}
+                  >
+                    验证所选（{nativeSelected.length}）
+                  </Button>
+                )}
+              </>
+            )}
+            {filtered && (
+              <Button
+                size="compact-xs"
+                variant="subtle"
+                color="gray"
+                onClick={() => {
+                  setQuery("");
+                  setTagFilters([]);
+                  setKind("all");
+                  setPage(1);
+                }}
+              >
+                清除筛选
+              </Button>
+            )}
+          </div>
+        </div>
+        {scanning && (
+          <div className="subbar" style={{ flexWrap: "nowrap" }}>
+            <span
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                minWidth: 0,
               }}
-              leftSection={<IconSearch size={17} />}
-              style={{ flex: 1, minWidth: 180 }}
-            />
-            <Select
-              aria-label="metadata 格式筛选"
-              value={kind}
-              onChange={(v) => {
-                setKind(v);
-                setPage(1);
-              }}
-              data={[
-                { value: "all", label: "全部作品" },
-                { value: "legacy", label: "待迁移" },
-                { value: "native", label: "已使用新 metadata" },
-              ]}
-              w={180}
-            />
-            <Button
-              variant="default"
-              leftSection={<IconRefresh size={16} />}
-              disabled={scanning || queueing}
-              onClick={scan}
             >
-              重新扫描
-            </Button>
+              <Loader size={10} />
+              <span style={{ flex: "none" }}>
+                {cancelling ? "正在取消扫描" : "后台扫描中"} · 已检查{" "}
+                {data?.scan.visited} 个目录
+              </span>
+              <Text
+                span
+                size="xs"
+                c="dimmed"
+                truncate
+                title={data?.scan.current}
+                style={{ minWidth: 0 }}
+              >
+                {data?.scan.current}
+              </Text>
+            </span>
             <Button
-              variant="light"
-              leftSection={<IconFileImport size={16} />}
-              title="迁移当前下载目录中的所有旧 metadata，不受筛选或分页限制；请先完成扫描"
-              disabled={
-                !data ||
-                data.scan.state !== "completed" ||
-                data.legacyTotal === 0 ||
-                queueing
-              }
-              onClick={migrateAll}
-            >
-              全部迁移
-            </Button>
-            <Button
-              variant="light"
-              leftSection={<IconShieldCheck size={16} />}
-              disabled={
-                scanning ||
-                !data ||
-                data.scan.found - data.legacyTotal === 0 ||
-                queueing
-              }
-              onClick={verifyAll}
-            >
-              验证全部
-            </Button>
-          </Group>
-          <Group align="flex-end">
-            <MultiSelect
-              label="标签筛选"
-              placeholder="搜索并选择标签（多个标签需同时满足）"
-              searchable
-              clearable
-              limit={50}
-              hidePickedOptions
-              nothingFoundMessage="没有匹配的标签"
-              data={tagOptions}
-              value={tagFilters}
-              onChange={(tags) => {
-                setTagFilters(tags);
-                setPage(1);
-              }}
-              style={{ flex: 1, minWidth: 220 }}
-            />
-            <Button
+              size="compact-xs"
               variant="subtle"
               color="gray"
-              disabled={!query && !tagFilters.length && kind === "all"}
-              onClick={() => {
-                setQuery("");
-                setTagFilters([]);
-                setKind("all");
-                setPage(1);
-              }}
-            >
-              清除筛选
-            </Button>
-          </Group>
-          <Text size="xs" c="dimmed">
-            输入后自动搜索本地记录，空格分隔多个条件；支持 -tag:digital
-            等排除条件。点击列表中的标签可加入筛选。
-          </Text>
-          <Text size="xs" c="dimmed" className="path">
-            {directory}
-          </Text>
-        </Stack>
-      </Paper>
-      {loading && !data && (
-        <Group>
-          <Loader size="xs" />
-          <Text size="sm" c="dimmed">
-            正在读取目录…
-          </Text>
-        </Group>
-      )}
-      {data && (
-        <Group justify="space-between">
-          <Text size="sm" c="dimmed">
-            {scanning ? "已发现" : "共"} {data.scan.found.toLocaleString()}{" "}
-            个作品 · {data.legacyTotal.toLocaleString()} 个待迁移
-            {data.total !== data.scan.found && ` · 筛选结果 ${data.total} 个`}
-          </Text>
-          {scanning && (
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconX size={14} />}
+              leftSection={<IconX size={12} />}
               loading={cancelling}
-              onClick={async () => {
-                try {
-                  setCancelling(true);
-                  await api("/library/scan/cancel", {});
-                  setRevision((v) => v + 1);
-                } catch (e) {
-                  setCancelling(false);
-                  report(e);
-                }
-              }}
+              onClick={cancelScan}
             >
               取消扫描
             </Button>
-          )}
-        </Group>
-      )}
-      {scanning && (
-        <Paper p="sm" withBorder>
-          <Group gap="sm" wrap="nowrap">
-            <Loader size="xs" />
-            <div style={{ minWidth: 0 }}>
-              <Text size="sm">
-                {cancelling
-                  ? "正在取消扫描"
-                  : "后台扫描中，可以先浏览已发现的作品"}{" "}
-                · 已检查 {data?.scan.visited} 个目录
-              </Text>
-              <Text size="xs" c="dimmed" truncate title={data?.scan.current}>
-                {data?.scan.current}
-              </Text>
-            </div>
-          </Group>
-        </Paper>
-      )}
+          </div>
+        )}
+      </div>
       {data?.scan.state === "cancelled" && (
-        <Alert color="gray">扫描已取消，已发现的结果仍可浏览。</Alert>
+        <Alert color="gray" p="xs" mb="xs">
+          扫描已取消，已发现的结果仍可浏览。
+        </Alert>
       )}
-      {error && <Alert color="red">{error}</Alert>}
-      {data?.scan.error && <Alert color="red">{data.scan.error}</Alert>}
+      {error && (
+        <Alert color="red" p="xs" mb="xs">
+          {error}
+        </Alert>
+      )}
+      {data?.scan.error && (
+        <Alert color="red" p="xs" mb="xs">
+          {data.scan.error}
+        </Alert>
+      )}
       {data && data.scan.warningCount > 0 && (
         <details className="scan-warnings">
           <summary>{data.scan.warningCount} 个目录或 metadata 无法读取</summary>
           {data.scan.warnings.map((w, i) => (
-            <Text key={i} size="xs" className="path" mt={5}>
+            <Text key={i} size="xs" className="path" mt={4}>
               {w}
             </Text>
           ))}
         </details>
       )}
-      {data && data.legacyTotal > 0 && (
-        <Alert
-          color="blue"
-          icon={<IconFileImport size={18} />}
-          title="发现旧 metadata"
-        >
-          旧格式不会自动改写。迁移会备份原
-          metadata，读取现有图片并建立校验记录；缺失页面可在迁移后补全。
-        </Alert>
-      )}
-      {(entries.length > 0 || selected.size > 0) && (
-        <Group justify="space-between" className="downloaded-selection">
-          <Checkbox
-            label={`选择本页${selected.size ? ` · 已选 ${selected.size} 项` : ""}`}
-            checked={pageSelected}
-            indeterminate={
-              !pageSelected && entries.some((e) => selected.has(e.directory))
-            }
-            onChange={() =>
-              setSelected((prev) => {
-                const next = new Map(prev);
-                for (const e of entries) {
-                  if (pageSelected) next.delete(e.directory);
-                  else next.set(e.directory, e);
-                }
-                return next;
-              })
-            }
-          />
-          <Group gap="xs">
-            {legacySelected.length > 0 ? (
-              <Button
+      <div className="rows">
+        {entries.map((entry) => {
+          const { main, sub } = titles(entry.title, entry.japaneseTitle);
+          const running = taskOf(entry);
+          const meta = [
+            `#${entry.id}`,
+            entry.artists.length ? entry.artists.join("、") : "",
+            entry.language || "未知语言",
+            entry.type,
+            `${entry.pages} 页`,
+            entry.formats.join(" / ").toUpperCase(),
+          ].filter(Boolean);
+          return (
+            <Paper
+              withBorder
+              key={entry.directory}
+              className="downloaded-row"
+              title={entry.directory}
+            >
+              <Checkbox
                 size="xs"
-                variant="light"
-                leftSection={<IconFileImport size={14} />}
-                disabled={queueing}
-                onClick={() => batch("migrate", legacySelected)}
-              >
-                迁移所选（{legacySelected.length}）
-              </Button>
-            ) : (
-              entries.some((e) => e.legacy) && (
-                <Button
-                  size="xs"
+                aria-label={`选择作品 ${entry.id}`}
+                checked={selected.has(entry.directory)}
+                onChange={() => toggle(entry)}
+              />
+              <Cover
+                src={`/api/v1/library/cover?directory=${encodeURIComponent(entry.directory)}&v=${encodeURIComponent(entry.updatedAt || "")}`}
+                alt={`${main} 封面`}
+              />
+              <div className="downloaded-info">
+                <div className="d-title">
+                  {entry.legacy && (
+                    <Badge size="xs" color="orange" variant="light">
+                      待迁移
+                    </Badge>
+                  )}
+                  {running && (
+                    <Badge size="xs" variant="light">
+                      {running.operation === "migrate" ? "迁移中" : "处理中"}
+                    </Badge>
+                  )}
+                  <span className="main-title" title={main}>
+                    {main}
+                  </span>
+                  {sub && (
+                    <span className="work-title-secondary" title={sub}>
+                      {sub}
+                    </span>
+                  )}
+                </div>
+                <div className="d-meta">
+                  {meta.map((part, i) => (
+                    <Fragment key={i}>
+                      {i > 0 && " · "}
+                      <span>{part}</span>
+                    </Fragment>
+                  ))}
+                  {entry.missing > 0 && (
+                    <span className="warn"> · {entry.missing} 页需要验证并补全</span>
+                  )}
+                  {entry.fallbacks > 0 && (
+                    <span className="warn"> · {entry.fallbacks} 页使用衍生格式</span>
+                  )}
+                </div>
+                <EntryTags tags={entry.tags || []} onSelect={addTagFilter} />
+              </div>
+              <Tooltip label={entry.legacy ? "迁移" : "验证并补全"}>
+                <ActionIcon
                   variant="light"
-                  disabled={queueing}
+                  aria-label={entry.legacy ? "迁移" : "验证并补全"}
+                  disabled={busy(entry) || queueing}
                   onClick={() =>
-                    batch(
-                      "migrate",
-                      entries.filter((e) => e.legacy && !busy(e)),
-                    )
+                    batch(entry.legacy ? "migrate" : "repair", [entry])
                   }
                 >
-                  迁移本页旧格式
-                </Button>
-              )
-            )}
-            {nativeSelected.length > 0 && (
-              <Button
-                size="xs"
-                variant="default"
-                disabled={queueing}
-                onClick={() => batch("repair", nativeSelected)}
-              >
-                验证所选（{nativeSelected.length}）
-              </Button>
-            )}
-          </Group>
-        </Group>
-      )}
-      {queueProgress && (
-        <Text size="sm" c="dimmed">
-          {queueProgress}
-        </Text>
-      )}
-      <Stack gap="sm">
-        {entries.map((entry) => (
-          <Paper
-            withBorder
-            p="md"
-            key={entry.directory}
-            className="downloaded-row"
-          >
-            <Checkbox
-              aria-label={`选择作品 ${entry.id}`}
-              checked={selected.has(entry.directory)}
-              onChange={() =>
-                setSelected((prev) => {
-                  const next = new Map(prev);
-                  if (next.has(entry.directory)) next.delete(entry.directory);
-                  else next.set(entry.directory, entry);
-                  return next;
-                })
-              }
-            />
-            <Image
-              loading="lazy"
-              src={`/api/v1/library/cover?directory=${encodeURIComponent(entry.directory)}&v=${encodeURIComponent(entry.updatedAt || "")}`}
-              w={88}
-              h={124}
-              fit="contain"
-              radius="sm"
-              className="cover"
-              alt={`${entry.japaneseTitle?.trim() || entry.title} 封面`}
-              fallbackSrc="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='88' height='124'%3E%3Crect fill='%232a2e35' width='88' height='124'/%3E%3Ctext x='44' y='65' fill='%23868e96' font-size='12' text-anchor='middle'%3E%E6%9A%82%E6%97%A0%E5%B0%81%E9%9D%A2%3C/text%3E%3C/svg%3E"
-            />
-            <div className="downloaded-info">
-              <Group gap={6} mb={6}>
-                <Badge size="xs" variant="outline" color="gray">
-                  #{entry.id}
-                </Badge>
-                {entry.legacy ? (
-                  <Badge size="xs" color="orange" variant="light">
-                    待迁移
-                  </Badge>
-                ) : (
-                  <Badge size="xs" color="teal" variant="light">
-                    已下载
-                  </Badge>
-                )}
-                {busy(entry) && (
-                  <Badge size="xs" variant="light">
-                    {tasks.find((t) => t.directory === entry.directory)
-                      ?.operation === "migrate"
-                      ? "迁移中"
-                      : "处理中"}
-                  </Badge>
-                )}
-              </Group>
-              <Title
-                order={3}
-                size="md"
-                lineClamp={2}
-                title={entry.japaneseTitle?.trim() || entry.title}
-              >
-                {entry.japaneseTitle?.trim() || entry.title}
-              </Title>
-              {entry.japaneseTitle?.trim() &&
-                entry.title.trim() &&
-                entry.japaneseTitle.trim() !== entry.title.trim() && (
-                  <Text
-                    size="xs"
-                    c="dimmed"
-                    lineClamp={1}
-                    mt={3}
-                    className="work-title-secondary"
-                  >
-                    {entry.title}
-                  </Text>
-                )}
-              <Group gap="sm" mt={7}>
-                <Text size="sm" fw={600}>
-                  {entry.pages} 页
-                </Text>
-                <Text size="xs" c="dimmed">
-                  {entry.language || "未知语言"}
-                  {entry.type && ` · ${entry.type}`}
-                  {entry.formats.length > 0 &&
-                    ` · ${entry.formats.join(" / ").toUpperCase()}`}
-                </Text>
-              </Group>
-              {entry.artists.length > 0 && (
-                <Text size="xs" c="dimmed" mt={4} lineClamp={1}>
-                  作者：{entry.artists.join("、")}
-                </Text>
-              )}
-              <EntryTags
-                tags={entry.tags || []}
-                onSelect={(value) => {
-                  setTagFilters((previous) =>
-                    previous.includes(value) ? previous : [...previous, value],
-                  );
-                  setPage(1);
-                }}
-              />
-              {entry.missing > 0 && (
-                <Text size="xs" c="orange" mt={4}>
-                  {entry.missing} 页需要验证并补全
-                </Text>
-              )}
-              {entry.fallbacks > 0 && (
-                <Text size="xs" c="orange" mt={4}>
-                  {entry.fallbacks} 页使用衍生格式
-                </Text>
-              )}
-              <Text
-                size="xs"
-                c="dimmed"
-                mt={5}
-                truncate
-                title={entry.directory}
-              >
-                {entry.directory}
-              </Text>
-            </div>
-            <Stack gap="xs" className="downloaded-actions">
-              {entry.legacy ? (
-                <Button
-                  size="xs"
-                  variant="light"
-                  leftSection={<IconFileImport size={15} />}
-                  disabled={busy(entry) || queueing}
-                  onClick={() => batch("migrate", [entry])}
-                >
-                  迁移
-                </Button>
-              ) : (
-                <Button
-                  size="xs"
-                  variant="light"
-                  leftSection={<IconShieldCheck size={15} />}
-                  disabled={busy(entry) || queueing}
-                  onClick={() => batch("repair", [entry])}
-                >
-                  验证并补全
-                </Button>
-              )}
-            </Stack>
-          </Paper>
-        ))}
-      </Stack>
+                  {entry.legacy ? (
+                    <IconFileImport size={16} />
+                  ) : (
+                    <IconShieldCheck size={16} />
+                  )}
+                </ActionIcon>
+              </Tooltip>
+            </Paper>
+          );
+        })}
+      </div>
       {!loading && !scanning && !entries.length && (
-        <Paper p="xl" withBorder ta="center">
-          <IconPhotoOff size={28} color="var(--mantine-color-dimmed)" />
-          <Text c="dimmed" size="sm" mt="sm">
-            {q || tagFilters.length > 0 || kind !== "all"
+        <Empty
+          text={
+            filtered
               ? "没有匹配的已下载作品。"
-              : "没有发现已下载作品。可在设置中选择已有下载目录。"}
-          </Text>
-        </Paper>
-      )}
-      {data && data.total > 20 && (
-        <Pagination
-          total={Math.ceil(data.total / 20)}
-          value={page}
-          onChange={setPage}
-          mx="auto"
+              : "没有发现已下载作品。可在设置中选择已有下载目录。"
+          }
         />
       )}
-    </Stack>
+      {data && data.total > PAGE_SIZE && (
+        <div className="pager">
+          <Pagination
+            total={Math.ceil(data.total / PAGE_SIZE)}
+            value={page}
+            onChange={setPage}
+            size="sm"
+          />
+        </div>
+      )}
+    </>
   );
 }
+
+const TAG_LIMIT = 6;
 
 function EntryTags({
   tags,
@@ -703,8 +671,8 @@ function EntryTags({
   const [expanded, setExpanded] = useState(false);
   if (!tags.length) return null;
   return (
-    <Group gap={5} mt={7} className="downloaded-tags">
-      {(expanded ? tags : tags.slice(0, 8)).map((tag) => {
+    <div className="downloaded-tags">
+      {(expanded ? tags : tags.slice(0, TAG_LIMIT)).map((tag) => {
         const label = `${tag.namespace}:${tag.name}`;
         const value = label
           .toLowerCase()
@@ -726,24 +694,25 @@ function EntryTags({
             title={label}
             aria-label={`按标签 ${label} 筛选`}
             onClick={() => onSelect(value)}
-            style={{ maxWidth: "100%" }}
+            style={{ maxWidth: "100%", height: 18, paddingInline: 6 }}
           >
-            <Text component="span" size="xs" truncate>
+            <Text component="span" fz={11} truncate>
               {label}
             </Text>
           </Button>
         );
       })}
-      {tags.length > 8 && (
+      {tags.length > TAG_LIMIT && (
         <Button
           size="compact-xs"
           variant="subtle"
           color="gray"
+          style={{ height: 18, paddingInline: 6 }}
           onClick={() => setExpanded((v) => !v)}
         >
-          {expanded ? "收起标签" : `展开 ${tags.length - 8} 个标签`}
+          {expanded ? "收起" : `+${tags.length - TAG_LIMIT}`}
         </Button>
       )}
-    </Group>
+    </div>
   );
 }

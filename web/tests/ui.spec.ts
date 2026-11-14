@@ -121,11 +121,9 @@ test("AppShell 导航和停止后的操作状态", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "已下载", exact: true }),
   ).toBeVisible();
-  await expect(
-    page
-      .locator(".downloaded-row")
-      .getByRole("heading", { name: "日本語タイトル", exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".downloaded-row .main-title")).toHaveText(
+    "日本語タイトル",
+  );
   await expect(
     page.locator(".downloaded-row .work-title-secondary"),
   ).toHaveText("旧格式示例");
@@ -417,8 +415,13 @@ test("队列支持全部暂停、全部开始、隐藏和移除已完成任务",
   await page.goto("http://hitomi.test/");
   await page.getByRole("button", { name: /^下载队列/ }).click();
   await expect(page.getByText("已完成示例", { exact: true })).toBeVisible();
-  await page.getByRole("checkbox", { name: "隐藏已完成", exact: true }).check();
+  // 「待恢复」だけに絞り込むと、完了済みと実行中のタスクは表示されない。
+  await page.getByText(/^待恢复/).click();
   await expect(page.getByText("已完成示例", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("运行中的示例", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("暂停中的示例", { exact: true })).toBeVisible();
+  await page.getByText(/^全部 \d+/).click();
+  await expect(page.getByText("运行中的示例", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "全部暂停", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "全部暂停", exact: true }),
@@ -435,9 +438,6 @@ test("队列支持全部暂停、全部开始、隐藏和移除已完成任务",
   await expect(
     page.getByRole("button", { name: "移除已完成任务（0）", exact: true }),
   ).toBeDisabled();
-  await page
-    .getByRole("checkbox", { name: "隐藏已完成", exact: true })
-    .uncheck();
   await expect(page.getByText("已完成示例", { exact: true })).toHaveCount(0);
   await expect(page.getByText("运行中的示例", { exact: true })).toBeVisible();
   await expect(page.getByText("暂停中的示例", { exact: true })).toBeVisible();

@@ -63,6 +63,7 @@ type Client struct {
 	next      time.Time
 	routeMu   sync.Mutex
 	route     routing
+	versionMu sync.Mutex
 	version   string
 	versionAt time.Time
 }
@@ -200,15 +201,13 @@ func (c *Client) Gallery(ctx context.Context, id int) (Gallery, error) {
 	return g, nil
 }
 func (c *Client) Version(ctx context.Context, force bool) (string, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	// レート制御の c.mu とは別のロックでキャッシュを保護し、取得中も c.mu を保持しない。
+	c.versionMu.Lock()
+	defer c.versionMu.Unlock()
 	if !force && time.Since(c.versionAt) < 5*time.Minute && c.version != "" {
 		return c.version, nil
 	}
-	// ネットワーク待機中はレート制御のロックを解放する。
-	c.mu.Unlock()
 	b, e := c.Bytes(ctx, c.Base+"/galleriesindex/version", "", 128)
-	c.mu.Lock()
 	if e != nil {
 		return "", e
 	}
