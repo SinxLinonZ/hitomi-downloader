@@ -80,6 +80,7 @@ test("扫描已下载并离线完成验证，保留原有图片", async ({ page 
   await page.getByRole("button", { name: "已下载", exact: true }).click();
   await expect(page.getByText("离线校验示例")).toBeVisible();
   await page.getByRole("button", { name: "验证全部" }).click();
+  await page.getByRole("dialog", { name: "验证全部" }).getByRole("button", { name: /^验证 \d+ 个作品/ }).click();
   await expect(page.getByText("已完成", { exact: true })).toBeVisible();
   await expect(page.getByText("1 / 1 页")).toBeVisible();
   expect(await readFile(join(galleryDir, "0001.png"))).toBeTruthy();

@@ -190,6 +190,7 @@ test("AppShell 导航和停止后的操作状态", async ({ page }) => {
   await page
     .getByRole("button", { name: "迁移所选（1）", exact: true })
     .click();
+  await page.getByRole("dialog", { name: "迁移旧格式" }).getByRole("button", { name: "迁移 1 个作品" }).click();
   await expect(
     page.locator(".downloaded-row").getByText("待迁移", { exact: true }),
   ).toHaveCount(0);
@@ -330,8 +331,16 @@ test("全部迁移固定所有页的目标并分批入队", async ({ page }) => 
   await expect(button).toBeEnabled();
   expect(batches).toHaveLength(0);
   await button.click();
+  // 確認ダイアログで件数が示され、取消では何も送られない。
+  const confirm = page.getByRole("dialog", { name: "迁移旧格式" });
+  await expect(confirm.getByText(/迁移 205 个作品/).first()).toBeVisible();
+  await confirm.getByRole("button", { name: "取消" }).click();
+  await expect(confirm).toBeHidden();
+  expect(batches).toHaveLength(0);
+  await button.click();
+  await confirm.getByRole("button", { name: "迁移 205 个作品" }).click();
   await expect(page.getByText("迁移已加入队列", { exact: true })).toBeVisible();
-  expect(snapshots).toBe(1);
+  expect(snapshots).toBe(2); // 取消した 1 回目と実行した 2 回目で、それぞれ対象を取得する
   expect(batches.map((v) => v.length)).toEqual([100, 100, 5]);
   expect(batches.flat()).toEqual(directories);
   expect(new Set(batches.flat()).size).toBe(205);
@@ -450,11 +459,17 @@ test("队列支持全部暂停、全部开始、隐藏和移除已完成任务",
   await page.getByText(/^全部 \d+/).click();
   await expect(page.getByText("运行中的示例", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "全部暂停", exact: true }).click();
+  // 取消すると何も実行されない。
+  await page.getByRole("dialog", { name: "全部暂停" }).getByRole("button", { name: "取消" }).click();
+  expect(actions).toEqual([]);
+  await page.getByRole("button", { name: "全部暂停", exact: true }).click();
+  await page.getByRole("dialog", { name: "全部暂停" }).getByRole("button", { name: /^暂停 \d+ 个任务/ }).click();
   await expect(
     page.getByRole("button", { name: "全部暂停", exact: true }),
   ).toBeDisabled();
   expect(tasks.filter((t) => t.state === "paused")).toHaveLength(2);
   await page.getByRole("button", { name: "全部开始", exact: true }).click();
+  await page.getByRole("dialog", { name: "全部开始" }).getByRole("button", { name: /^开始 \d+ 个任务/ }).click();
   await expect(
     page.getByRole("button", { name: "全部开始", exact: true }),
   ).toBeDisabled();
@@ -462,6 +477,7 @@ test("队列支持全部暂停、全部开始、隐藏和移除已完成任务",
   await page
     .getByRole("button", { name: "移除已完成任务（1）", exact: true })
     .click();
+  await page.getByRole("dialog", { name: "移除已完成任务" }).getByRole("button", { name: "移除 1 条记录" }).click();
   await expect(
     page.getByRole("button", { name: "移除已完成任务（0）", exact: true }),
   ).toBeDisabled();

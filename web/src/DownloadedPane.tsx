@@ -27,6 +27,7 @@ import {
 } from "@tabler/icons-react";
 import { api, Entry, Gallery, LibraryPage, Task } from "./api";
 import { Cover, Empty, errorText, report, titles } from "./common";
+import { useConfirm } from "./confirm";
 import { Opened, WorkDrawer } from "./WorkDrawer";
 
 type Batch = { accepted: string[]; errors: Record<string, string> };
@@ -90,6 +91,7 @@ export function DownloadedPane({
   const [queueProgress, setQueueProgress] = useState("");
   const [cancelling, setCancelling] = useState(false);
   const [opened, setOpened] = useState<Opened>();
+  const { confirm, element: confirmElement } = useConfirm();
   const taskRevision = tasks
     .map((t) => `${t.id}:${t.operation}:${t.state}`)
     .join("|");
@@ -163,6 +165,25 @@ export function DownloadedPane({
   const busy = (entry: Entry) => !!taskOf(entry);
   const filtered = !!query || tagFilters.length > 0 || kind !== "all";
 
+  // 複数作品に対する操作は、件数と影響を示して確認してから実行する。
+  const MIGRATE_NOTE = "只检查现有图片，不重新下载、不修改图片；原 metadata 会备份为 metadata.legacy.json。";
+  const REPAIR_NOTE = "对比 Hitomi 信息并校验本地文件，只补全缺失或损坏的页面；上游有更新时只报告，不覆盖本地文件。";
+  async function confirmBatch(
+    op: "migrate" | "repair" | "update",
+    values: Pick<Entry, "directory">[],
+    skipped = 0,
+  ) {
+    if (!values.length) return;
+    const n = values.length;
+    const ok = await confirm(
+      op === "migrate"
+        ? { title: "迁移旧格式", message: `迁移 ${n} 个作品。${MIGRATE_NOTE}`, confirmLabel: `迁移 ${n} 个作品` }
+        : op === "update"
+          ? { title: "应用上游更新", message: `为 ${n} 个作品下载上游替换或新增的页面。被替换的旧页面会保留在各作品的 superseded 目录。`, confirmLabel: `更新 ${n} 个作品`, color: "blue" }
+          : { title: "验证并补全", message: `验证 ${n} 个作品。${REPAIR_NOTE}每个作品会请求一次 Hitomi。`, confirmLabel: `验证 ${n} 个作品` },
+    );
+    if (ok) await batch(op, values, skipped);
+  }
   async function batch(
     op: "migrate" | "repair" | "update",
     values: Pick<Entry, "directory">[],
@@ -248,7 +269,9 @@ export function DownloadedPane({
         setRevision((v) => v + 1);
         return;
       }
-      await batch(
+      setQueueing(false);
+      setQueueProgress("");
+      await confirmBatch(
         "migrate",
         targets.directories.map((directory) => ({ directory })),
         targets.skipped,
@@ -261,6 +284,13 @@ export function DownloadedPane({
     }
   }
   async function verifyAll() {
+    const count = data ? data.scan.found - data.legacyTotal : 0;
+    const ok = await confirm({
+      title: "验证全部",
+      message: `验证全部约 ${count.toLocaleString()} 个新格式作品，不受筛选和分页限制。${REPAIR_NOTE}每个作品会请求一次 Hitomi，数量多时需要较长时间。`,
+      confirmLabel: `验证 ${count.toLocaleString()} 个作品`,
+    });
+    if (!ok) return;
     setQueueing(true);
     let accepted = 0;
     let failed = 0;
@@ -498,7 +528,7 @@ export function DownloadedPane({
                     size="compact-xs"
                     variant="light"
                     disabled={queueing}
-                    onClick={() => batch("migrate", legacySelected)}
+                    onClick={() => confirmBatch("migrate", legacySelected)}
                   >
                     迁移所选（{legacySelected.length}）
                   </Button>
@@ -509,7 +539,7 @@ export function DownloadedPane({
                       variant="light"
                       disabled={queueing}
                       onClick={() =>
-                        batch(
+                        confirmBatch(
                           "migrate",
                           entries.filter((e) => e.legacy && !busy(e)),
                         )
@@ -524,7 +554,7 @@ export function DownloadedPane({
                     size="compact-xs"
                     variant="default"
                     disabled={queueing}
-                    onClick={() => batch("repair", nativeSelected)}
+                    onClick={() => confirmBatch("repair", nativeSelected)}
                   >
                     验证所选（{nativeSelected.length}）
                   </Button>
@@ -536,7 +566,7 @@ export function DownloadedPane({
                     color="blue"
                     title="下载上游替换或新增的页面；被替换的旧页面保留在 superseded 目录"
                     disabled={queueing}
-                    onClick={() => batch("update", updatable)}
+                    onClick={() => confirmBatch("update", updatable)}
                   >
                     应用上游更新（{updatable.length}）
                   </Button>
@@ -752,6 +782,7 @@ export function DownloadedPane({
           }
         />
       )}
+      {confirmElement}
       <WorkDrawer opened={opened} onClose={() => setOpened(undefined)} />
       {data && data.total > PAGE_SIZE && (
         <div className="pager">

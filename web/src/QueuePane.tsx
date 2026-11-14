@@ -23,6 +23,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { api, stateLabels, Task, TaskBatchResult } from "./api";
+import { useConfirm } from "./confirm";
 import {
   Empty,
   isActive,
@@ -54,6 +55,7 @@ export function QueuePane({
   const [page, setPage] = useState(1);
   const [queueAction, setQueueAction] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<number>();
+  const { confirm, element: confirmElement } = useConfirm();
 
   const active = tasks.filter(isActive).length;
   const resumable = tasks.filter(isResumable).length;
@@ -84,6 +86,26 @@ export function QueuePane({
   async function controlQueue(
     action: "pause-all" | "resume-all" | "clear-completed",
   ) {
+    const ok =
+      action === "pause-all"
+        ? await confirm({
+            title: "全部暂停",
+            message: `暂停 ${active} 个排队中和进行中的任务。已下载的页面会保留，之后可以继续。`,
+            confirmLabel: `暂停 ${active} 个任务`,
+          })
+        : action === "resume-all"
+          ? await confirm({
+              title: "全部开始",
+              message: `开始 ${resumable} 个已暂停、失败或已取消的任务；已完成的任务会跳过。`,
+              confirmLabel: `开始 ${resumable} 个任务`,
+            })
+          : await confirm({
+              title: "移除已完成任务",
+              message: `从队列中移除 ${completed} 条已完成的任务记录。下载的文件和 metadata 不会被删除，作品仍在“已下载”中。`,
+              confirmLabel: `移除 ${completed} 条记录`,
+              color: "red",
+            });
+    if (!ok) return;
     setQueueAction(action);
     try {
       const result = await api<TaskBatchResult>(`/downloads/${action}`, {});
@@ -302,6 +324,7 @@ export function QueuePane({
           <Pagination total={pages} value={page} onChange={setPage} size="sm" />
         </div>
       )}
+      {confirmElement}
       <Drawer
         opened={!!detail}
         onClose={() => setDetailId(undefined)}
