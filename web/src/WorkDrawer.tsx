@@ -15,6 +15,7 @@ import { api, Gallery } from "./api";
 import { Cover, errorText, titles } from "./common";
 import { statusHint, useWorkStatus } from "./downloadStatus";
 import { addDownload, GalleryCard } from "./GalleryCard";
+import { t } from "./i18n";
 
 // 詳細を開く対象。ローカルの作品は表紙とディレクトリを指定できる。
 export type Opened = { gallery: Gallery; coverSrc?: string; directory?: string };
@@ -35,7 +36,7 @@ export function WorkDrawer({
     <Drawer
       opened={!!opened}
       onClose={onClose}
-      title="作品详情"
+      title={t("作品详情")}
       position="right"
       size="lg"
       padding="md"
@@ -50,7 +51,7 @@ export function WorkDrawer({
               leftSection={<IconArrowLeft size={14} />}
               onClick={() => setExtra((t) => t.slice(0, -1))}
             >
-              返回上一个作品
+              {t("返回上一个作品")}
             </Button>
           )}
           <WorkDetail
@@ -93,10 +94,10 @@ function Related({
     return () => controller.abort();
   }, [id]);
   return (
-    <section aria-label="相关作品" style={{ marginTop: 16 }}>
+    <section aria-label={t("相关作品")} style={{ marginTop: 16 }}>
       <Group gap={6} mb="xs">
         <Text fw={600} size="sm">
-          相关作品{items ? `（${items.length}）` : ""}
+          {t("相关作品")}{items ? `（${items.length}）` : ""}
         </Text>
         {!items && !error && <Loader size={12} />}
       </Group>
@@ -107,7 +108,7 @@ function Related({
       )}
       {items && items.length === 0 && (
         <Text size="xs" c="dimmed">
-          没有相关作品。
+          {t("没有相关作品。")}
         </Text>
       )}
       {items && items.length > 0 && (
@@ -158,7 +159,7 @@ function WorkDetail({
   return (
     <>
       <div className="detail-head">
-        <Cover src={coverSrc || `/api/v1/covers/${g.id}`} alt={`${main} 封面`} />
+        <Cover src={coverSrc || `/api/v1/covers/${g.id}`} alt={t("{title} 封面", { title: main })} />
         <div style={{ minWidth: 0, flex: 1 }}>
           <Title order={4} lh={1.35}>
             {main}
@@ -175,8 +176,8 @@ function WorkDetail({
             </Text>
           )}
           <Group gap={4} mt={6}>
-            <Badge>{g.language || "未知语言"}</Badge>
-            <Badge variant="light">{g.files.length} 页</Badge>
+            <Badge>{g.language || t("未知语言")}</Badge>
+            <Badge variant="light">{t("{n} 页", { n: g.files.length })}</Badge>
             <Badge variant="light">{g.type}</Badge>
             <Badge variant="outline" color="gray">
               #{g.id}
@@ -215,7 +216,7 @@ function WorkDetail({
               disabled={!!hint}
               onClick={() => addDownload(g.id)}
             >
-              {hint ?? "加入下载队列"}
+              {hint ?? t("加入下载队列")}
             </Button>
           </div>
         </Tooltip>

@@ -10,6 +10,7 @@ import {
 } from "react";
 import { api, Task } from "./api";
 import { isActive } from "./common";
+import { t } from "./i18n";
 
 // 作品がすでに本地库にあるか／キューに入っているかを、画面全体で共有する。
 export type WorkStatus = "downloaded" | "active" | undefined;
@@ -94,7 +95,7 @@ export function useWorkStatus(
 
 export const statusHint = (s: WorkStatus) =>
   s === "downloaded"
-    ? "已下载"
+    ? t("已下载")
     : s === "active"
-      ? "已在下载队列中"
+      ? t("已在下载队列中")
       : undefined;

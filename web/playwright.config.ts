@@ -4,6 +4,8 @@ export default defineConfig({
   workers: 1,
   use: {
     headless: true,
+    // 既存のテストは簡体字中国語の画面を前提にする（言語切り替えは i18n.spec.ts で確認）。
+    locale: "zh-CN",
     launchOptions: {
       executablePath:
         process.env.CHROME_PATH ||

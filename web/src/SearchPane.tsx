@@ -28,8 +28,9 @@ import { api, Gallery, Search } from "./api";
 import { Cover, Empty, errorText, report, titles } from "./common";
 import { GalleryCard } from "./GalleryCard";
 import { WorkDrawer } from "./WorkDrawer";
+import { t } from "./i18n";
 
-const HINT = "多个词取交集；标签中的空格用下划线连接，前缀 - 排除标签。";
+const hint = () => t("多个词取交集；标签中的空格用下划线连接，前缀 - 排除标签。");
 
 export function SearchPane({ disabled }: { disabled: boolean }) {
   const [query, setQuery] = useState("");
@@ -78,7 +79,7 @@ export function SearchPane({ disabled }: { disabled: boolean }) {
   async function openById() {
     const match = idInput.trim().match(/^(\d+)$|-(\d+)\.html(?:[?#].*)?$/);
     if (!match) {
-      report(new Error("请输入有效 ID 或作品链接"));
+      report(new Error(t("请输入有效 ID 或作品链接")));
       return;
     }
     try {
@@ -101,12 +102,12 @@ export function SearchPane({ disabled }: { disabled: boolean }) {
           >
             <TextInput
               className="grow"
-              aria-label="关键词与标签"
-              placeholder="关键词 · artist:name · language:japanese · -tag:name　（按 / 聚焦）"
+              aria-label={t("关键词与标签")}
+              placeholder={t("关键词 · artist:name · language:japanese · -tag:name　（按 / 聚焦）")}
               data-hotkey-search
               leftSection={<IconSearch size={14} />}
               rightSection={
-                <Tooltip label={HINT} multiline w={240}>
+                <Tooltip label={hint()} multiline w={240}>
                   <IconInfoCircle size={14} color="var(--dim)" />
                 </Tooltip>
               }
@@ -114,7 +115,7 @@ export function SearchPane({ disabled }: { disabled: boolean }) {
               onChange={(e) => setQuery(e.currentTarget.value)}
             />
             <Button type="submit" loading={busy}>
-              搜索
+              {t("搜索")}
             </Button>
             {busy && (
               <Button
@@ -125,13 +126,13 @@ export function SearchPane({ disabled }: { disabled: boolean }) {
                   setBusy(false);
                 }}
               >
-                取消
+                {t("取消")}
               </Button>
             )}
           </form>
           <TextInput
-            aria-label="作品 ID 或链接"
-            placeholder="作品 ID / 链接"
+            aria-label={t("作品 ID 或链接")}
+            placeholder={t("作品 ID / 链接")}
             w={170}
             value={idInput}
             onChange={(e) => setIDInput(e.currentTarget.value)}
@@ -140,20 +141,20 @@ export function SearchPane({ disabled }: { disabled: boolean }) {
             }}
           />
           <Button variant="light" onClick={openById}>
-            打开作品
+            {t("打开作品")}
           </Button>
         </div>
         {result && (
           <div className="subbar">
             <span>
-              找到 {result.total.toLocaleString()} 个作品 · 第 {result.page} 页
+              {t("找到 {total} 个作品 · 第 {page} 页", { total: result.total.toLocaleString(), page: result.page })}
             </span>
-            <Tooltip label="刷新本页">
+            <Tooltip label={t("刷新本页")}>
               <ActionIcon
                 variant="subtle"
                 color="gray"
                 size="sm"
-                aria-label="刷新本页"
+                aria-label={t("刷新本页")}
                 onClick={() => {
                   setCoverKey((k) => k + 1);
                   void search(result.page, result.session);
@@ -171,7 +172,7 @@ export function SearchPane({ disabled }: { disabled: boolean }) {
           py={6}
           mb="xs"
           icon={<IconX size={16} />}
-          title="搜索暂时无法完成"
+          title={t("搜索暂时无法完成")}
         >
           {error}
           <Button
@@ -182,7 +183,7 @@ export function SearchPane({ disabled }: { disabled: boolean }) {
               search(lastSearch.current.page, lastSearch.current.session)
             }
           >
-            重试
+            {t("重试")}
           </Button>
         </Alert>
       )}
@@ -205,7 +206,7 @@ export function SearchPane({ disabled }: { disabled: boolean }) {
                         variant="light"
                         onClick={() => search(result.page, result.session)}
                       >
-                        重试此页信息
+                        {t("重试此页信息")}
                       </Button>
                     </div>
                   </Paper>
@@ -221,7 +222,7 @@ export function SearchPane({ disabled }: { disabled: boolean }) {
               );
             })}
           </div>
-          {result.total === 0 && <Empty text="没有匹配结果，试试其他关键词。" />}
+          {result.total === 0 && <Empty text={t("没有匹配结果，试试其他关键词。")} />}
           {result.total > 24 && (
             <div className="pager">
               <Pagination
@@ -235,7 +236,7 @@ export function SearchPane({ disabled }: { disabled: boolean }) {
           )}
         </>
       ) : (
-        !busy && <Empty text="从一个关键词开始，或直接打开作品 ID。" />
+        !busy && <Empty text={t("从一个关键词开始，或直接打开作品 ID。")} />
       )}
       <WorkDrawer
         opened={picked ? { gallery: picked } : undefined}

@@ -25,8 +25,11 @@ go build -o hitomi-downloader ./cmd/hitomi-downloader
 ./hitomi-downloader --port 8080 --download-dir /absolute/path/to/downloads
 ./hitomi-downloader --proxy http://127.0.0.1:7890
 ./hitomi-downloader --lan   # 允许同一局域网的手机打开阅读页
+./hitomi-downloader --lang ja   # 终端输出和提示的语言：auto、zh、ja、en
 ./hitomi-downloader --proxy direct --no-open --data-dir /absolute/path/to/state
 ```
+
+**语言**：GUI 和终端输出支持简体中文、日语和英语。GUI 默认跟随浏览器语言，可在“设置”→“界面语言”中更改；该选择同时保存到 `data/config.json`，用于终端输出和服务端提示。终端语言的优先级：`--lang` > 已保存的设置 > 环境变量 `HITOMI_LANG` / `LC_ALL` / `LANG`（都不匹配时为英语）。任务记录中已保存的提示（例如任务错误）保持写入时的语言。
 
 默认监听 `127.0.0.1` 的随机端口。默认下载目录为工作目录下的 `downloads`，配置与任务记录在 `data`；GUI 保存的下载路径会在下一次启动时恢复，CLI 的 `--download-dir` 可覆盖它。Proxy 默认遵循 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY` 环境变量。CLI session 链接用于建立本机 HTTP-only cookie，重启后请使用新链接。
 

@@ -42,6 +42,8 @@ test.beforeAll(async () => {
   );
   server = spawn(resolve("../hitomi-downloader"), [
     "--no-open",
+    "--lang",
+    "zh",
     // 验证会尝试联网对比上游；测试中指向不可用的 proxy，避免访问真实站点。
     "--proxy",
     "http://127.0.0.1:1",

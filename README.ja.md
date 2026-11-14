@@ -27,8 +27,11 @@ go build -o hitomi-downloader ./cmd/hitomi-downloader
 ./hitomi-downloader --port 8080 --download-dir /absolute/path/to/downloads
 ./hitomi-downloader --proxy http://127.0.0.1:7890
 ./hitomi-downloader --lan   # 同じ LAN のスマートフォンから閲覧ページを開けるようにする
+./hitomi-downloader --lang ja   # ターミナル出力とメッセージの言語：auto、zh、ja、en
 ./hitomi-downloader --proxy direct --no-open --data-dir /absolute/path/to/state
 ```
+
+**言語**：GUI とターミナル出力は日本語・簡体字中国語・英語に対応しています。GUI は既定ではブラウザの言語に従い、「設定」→「表示言語」で変更できます。その選択は `data/config.json` にも保存され、ターミナル出力とサーバーのメッセージに使われます。ターミナルの言語は `--lang` ＞ 保存済みの設定 ＞ 環境変数 `HITOMI_LANG` / `LC_ALL` / `LANG` の順に決まります（どれにも一致しなければ英語）。タスク記録に保存済みのメッセージ（タスクのエラーなど）は、書き込まれた時点の言語のままです。
 
 既定では `127.0.0.1` のランダムなポートで待ち受けます。ダウンロード先の既定は作業ディレクトリ直下の `downloads`、設定とタスク記録は `data` に保存されます。GUI で保存したダウンロード先は次回起動時に復元され、CLI の `--download-dir` はそれを上書きします。Proxy は既定で環境変数 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY` に従います。CLI が表示するセッションリンクは、この端末用の HTTP-only Cookie を確立するためのものです。再起動したら新しいリンクを使ってください。
 

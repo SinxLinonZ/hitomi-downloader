@@ -1,3 +1,5 @@
+import { t } from "../i18n";
+
 // 閲覧位置と表示設定はこの端末のブラウザにだけ保存する。
 const PROGRESS_KEY = "hitomi.reader.progress";
 const PREFS_KEY = "hitomi.reader.prefs";
@@ -44,9 +46,9 @@ export const savePrefs = (prefs: Prefs) => write(PREFS_KEY, prefs);
 export type SortKey = "created" | "created-asc" | "updated";
 const SORT_KEY = "hitomi.reader.sort";
 export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: "created", label: "最近下载" },
-  { value: "created-asc", label: "最早下载" },
-  { value: "updated", label: "最近更新" },
+  { value: "created", label: t("最近下载") },
+  { value: "created-asc", label: t("最早下载") },
+  { value: "updated", label: t("最近更新") },
 ];
 export function loadSort(): SortKey {
   try {

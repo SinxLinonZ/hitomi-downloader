@@ -1,3 +1,14 @@
+import { t } from "./i18n";
+// サーバーのエラー応答。code でエラーの種類を判定できる（message は表示用の文言）。
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public code: string,
+    public status: number,
+  ) {
+    super(message);
+  }
+}
 export async function api<T>(
   path: string,
   body?: unknown,
@@ -13,12 +24,15 @@ export async function api<T>(
   if (!response.ok) {
     const text = await response.text();
     let message = text;
+    let code = "";
     try {
-      message = JSON.parse(text).error.message;
+      const error = JSON.parse(text).error;
+      message = error.message;
+      code = error.code || "";
     } catch {
       /* テキスト応答も表示する。 */
     }
-    throw new Error(message || `HTTP ${response.status}`);
+    throw new ApiError(message || `HTTP ${response.status}`, code, response.status);
   }
   return response.json() as Promise<T>;
 }
@@ -93,15 +107,17 @@ export type Search = {
   items: { id: number; gallery?: Gallery; error?: string }[];
 };
 export const stateLabels: Record<string, string> = {
-  queued: "排队中",
-  running: "处理中",
-  paused: "已暂停",
-  cancelled: "已取消",
-  failed: "失败",
-  completed: "已完成",
+  queued: t("排队中"),
+  running: t("处理中"),
+  paused: t("已暂停"),
+  cancelled: t("已取消"),
+  failed: t("失败"),
+  completed: t("已完成"),
 };
 export type Settings = {
   downloadDir: string;
+  language?: string;
+  effectiveLanguage?: string;
   taskConcurrency?: number;
   pageConcurrency?: number;
 };

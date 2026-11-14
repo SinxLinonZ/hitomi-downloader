@@ -27,8 +27,11 @@ Your default browser opens automatically; you can also open the link printed in 
 ./hitomi-downloader --port 8080 --download-dir /absolute/path/to/downloads
 ./hitomi-downloader --proxy http://127.0.0.1:7890
 ./hitomi-downloader --lan   # let a phone on the same LAN open the reader page
+./hitomi-downloader --lang ja   # language of terminal output and messages: auto, zh, ja, en
 ./hitomi-downloader --proxy direct --no-open --data-dir /absolute/path/to/state
 ```
+
+**Languages**: the GUI and the terminal output are available in English, Simplified Chinese and Japanese. The GUI follows the browser language by default and can be changed in "Settings" → "Language"; that choice is also saved in `data/config.json` and used for the terminal output and server messages. The terminal language is chosen in this order: `--lang` > the saved setting > the `HITOMI_LANG` / `LC_ALL` / `LANG` environment variables (English if none matches). Messages stored in task records (for example a task error) keep the language that was active when they were written.
 
 By default it listens on a random port of `127.0.0.1`. The default download directory is `downloads` under the working directory; configuration and task records live in `data`. A download path saved in the GUI is restored on the next start, and the CLI `--download-dir` overrides it. The proxy follows the `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` environment variables by default. The session link printed by the CLI establishes a local HTTP-only cookie; use the new link after every restart.
 

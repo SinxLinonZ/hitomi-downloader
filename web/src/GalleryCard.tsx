@@ -3,14 +3,15 @@ import { notifications } from "@mantine/notifications";
 import { IconArrowDown, IconCheck, IconInfoCircle } from "@tabler/icons-react";
 import { api, Gallery } from "./api";
 import { Cover, report, titles } from "./common";
+import { t } from "./i18n";
 import { statusHint, useWorkStatus } from "./downloadStatus";
 
 export async function addDownload(id: number | string) {
   try {
     await api("/downloads", { id: Number(id) });
     notifications.show({
-      title: "已加入下载队列",
-      message: `作品 #${id} · 优先获取源文件`,
+      title: t("已加入下载队列"),
+      message: t("作品 #{id} · 优先获取源文件", { id }),
       color: "teal",
     });
   } catch (e) {
@@ -38,7 +39,7 @@ export function GalleryCard({
       <Cover
         key={`${id}-${coverKey}`}
         src={`/api/v1/covers/${id}?v=${coverKey}`}
-        alt={`${main} 封面`}
+        alt={t("{title} 封面", { title: main })}
         onClick={() => onOpen(g)}
       />
       <span className="g-id">#{id}</span>
@@ -52,27 +53,27 @@ export function GalleryCard({
         </div>
         <div className="g-meta">
           <span>
-            {g.language || "未知语言"} · {g.files.length} 页
+            {g.language || t("未知语言")} · {t("{n} 页", { n: g.files.length })}
           </span>
           <Group gap={0} wrap="nowrap">
-            <Tooltip label="查看详情">
+            <Tooltip label={t("查看详情")}>
               <ActionIcon
                 variant="subtle"
                 color="gray"
                 size="sm"
-                aria-label="查看详情"
+                aria-label={t("查看详情")}
                 onClick={() => onOpen(g)}
               >
                 <IconInfoCircle size={15} />
               </ActionIcon>
             </Tooltip>
             {/* 置灰した按钮は hover を拾えないため、Tooltip の対象は外側の span にする。 */}
-            <Tooltip label={hint ?? "加入下载队列"}>
+            <Tooltip label={hint ?? t("加入下载队列")}>
               <span>
                 <ActionIcon
                   variant="light"
                   size="sm"
-                  aria-label={hint ? `${hint} #${id}` : `下载 #${id}`}
+                  aria-label={hint ? `${hint} #${id}` : t("下载 #{id}", { id })}
                   disabled={!!hint}
                   onClick={() => addDownload(id)}
                 >

@@ -28,6 +28,7 @@ import {
 import { api, Entry, Gallery, LibraryPage, Task } from "./api";
 import { Cover, Empty, errorText, report, titles } from "./common";
 import { useConfirm } from "./confirm";
+import { t as tr } from "./i18n";
 import { Opened, WorkDrawer } from "./WorkDrawer";
 
 type Batch = { accepted: string[]; errors: Record<string, string> };
@@ -53,8 +54,9 @@ function toOpened(entry: Entry): Opened {
   };
   return { gallery, coverSrc: coverUrl(entry), directory: entry.directory };
 }
-const MIGRATE_HINT =
-  "旧格式不会自动改写。迁移会备份原 metadata，读取现有图片并建立校验记录；缺失页面可在迁移后补全。";
+const MIGRATE_HINT = tr(
+  "旧格式不会自动改写。迁移会备份原 metadata，读取现有图片并建立校验记录；缺失页面可在迁移后补全。",
+);
 
 // 一覧用の短い日付（ローカル時刻）。
 const formatDay = (iso: string) => {
@@ -166,8 +168,8 @@ export function DownloadedPane({
   const filtered = !!query || tagFilters.length > 0 || kind !== "all";
 
   // 複数作品に対する操作は、件数と影響を示して確認してから実行する。
-  const MIGRATE_NOTE = "只检查现有图片，不重新下载、不修改图片；原 metadata 会备份为 metadata.legacy.json。";
-  const REPAIR_NOTE = "对比 Hitomi 信息并校验本地文件，只补全缺失或损坏的页面；上游有更新时只报告，不覆盖本地文件。";
+  const MIGRATE_NOTE = tr("只检查现有图片，不重新下载、不修改图片；原 metadata 会备份为 metadata.legacy.json。");
+  const REPAIR_NOTE = tr("对比 Hitomi 信息并校验本地文件，只补全缺失或损坏的页面；上游有更新时只报告，不覆盖本地文件。");
   async function confirmBatch(
     op: "migrate" | "repair" | "update",
     values: Pick<Entry, "directory">[],
@@ -177,10 +179,10 @@ export function DownloadedPane({
     const n = values.length;
     const ok = await confirm(
       op === "migrate"
-        ? { title: "迁移旧格式", message: `迁移 ${n} 个作品。${MIGRATE_NOTE}`, confirmLabel: `迁移 ${n} 个作品` }
+        ? { title: tr("迁移旧格式"), message: tr("迁移 {n} 个作品。{note}", { n, note: MIGRATE_NOTE }), confirmLabel: tr("迁移 {n} 个作品", { n }) }
         : op === "update"
-          ? { title: "应用上游更新", message: `为 ${n} 个作品下载上游替换或新增的页面。被替换的旧页面会保留在各作品的 superseded 目录。`, confirmLabel: `更新 ${n} 个作品`, color: "blue" }
-          : { title: "验证并补全", message: `验证 ${n} 个作品。${REPAIR_NOTE}每个作品会请求一次 Hitomi。`, confirmLabel: `验证 ${n} 个作品` },
+          ? { title: tr("应用上游更新"), message: tr("为 {n} 个作品下载上游替换或新增的页面。被替换的旧页面会保留在各作品的 superseded 目录。", { n }), confirmLabel: tr("更新 {n} 个作品", { n }), color: "blue" }
+          : { title: tr("验证并补全"), message: tr("验证 {n} 个作品。{note}每个作品会请求一次 Hitomi。", { n, note: REPAIR_NOTE }), confirmLabel: tr("验证 {n} 个作品", { n }) },
     );
     if (ok) await batch(op, values, skipped);
   }
@@ -194,7 +196,7 @@ export function DownloadedPane({
     try {
       const result: Batch = { accepted: [], errors: {} };
       for (let offset = 0; offset < values.length; offset += 100) {
-        setQueueProgress(`正在加入队列：${offset} / ${values.length}`);
+        setQueueProgress(tr("正在加入队列：{offset} / {total}", { offset, total: values.length }));
         const part = await api<Batch>(
           op === "migrate"
             ? "/library/migrate"
@@ -219,7 +221,7 @@ export function DownloadedPane({
               .map(([path, message]) => `${path}: ${message}`)
               .join("\n") +
               (failures.length > 5
-                ? `\n另有 ${failures.length - 5} 项未能加入，请稍后重试。`
+                ? "\n" + tr("另有 {n} 项未能加入，请稍后重试。", { n: failures.length - 5 })
                 : ""),
           ),
         );
@@ -228,11 +230,11 @@ export function DownloadedPane({
           color: "teal",
           title:
             op === "migrate"
-              ? "迁移已加入队列"
+              ? tr("迁移已加入队列")
               : op === "update"
-                ? "上游更新已加入队列"
-                : "验证已加入队列",
-          message: `${result.accepted.length} 个作品${skipped ? `，跳过 ${skipped} 个已有活动任务的作品` : ""}${op === "migrate" ? "，仅处理现有文件，不重新下载" : ""}`,
+                ? tr("上游更新已加入队列")
+                : tr("验证已加入队列"),
+          message: tr("{n} 个作品", { n: result.accepted.length }) + (skipped ? tr("，跳过 {n} 个已有活动任务的作品", { n: skipped }) : "") + (op === "migrate" ? tr("，仅处理现有文件，不重新下载") : ""),
         });
         setSelected(
           (prev) =>
@@ -254,17 +256,17 @@ export function DownloadedPane({
   }
   async function migrateAll() {
     setQueueing(true);
-    setQueueProgress("正在准备全部迁移列表…");
+    setQueueProgress(tr("正在准备全部迁移列表…"));
     try {
       const targets = await api<{ directories: string[]; skipped: number }>(
         "/library/migration-targets",
       );
       if (!targets.directories.length) {
         notifications.show({
-          title: "没有新的迁移任务",
+          title: tr("没有新的迁移任务"),
           message: targets.skipped
-            ? `${targets.skipped} 个作品已有活动任务，已跳过。`
-            : "旧 metadata 已全部迁移。",
+            ? tr("{n} 个作品已有活动任务，已跳过。", { n: targets.skipped })
+            : tr("旧 metadata 已全部迁移。"),
         });
         setRevision((v) => v + 1);
         return;
@@ -286,9 +288,9 @@ export function DownloadedPane({
   async function verifyAll() {
     const count = data ? data.scan.found - data.legacyTotal : 0;
     const ok = await confirm({
-      title: "验证全部",
-      message: `验证全部约 ${count.toLocaleString()} 个新格式作品，不受筛选和分页限制。${REPAIR_NOTE}每个作品会请求一次 Hitomi，数量多时需要较长时间。`,
-      confirmLabel: `验证 ${count.toLocaleString()} 个作品`,
+      title: tr("验证全部"),
+      message: tr("验证全部约 {n} 个新格式作品，不受筛选和分页限制。{note}每个作品会请求一次 Hitomi，数量多时需要较长时间。", { n: count.toLocaleString(), note: REPAIR_NOTE }),
+      confirmLabel: tr("验证 {n} 个作品", { n: count.toLocaleString() }),
     });
     if (!ok) return;
     setQueueing(true);
@@ -298,7 +300,7 @@ export function DownloadedPane({
       let total = Infinity;
       const targets = new Set<string>();
       for (let index = 1; (index - 1) * 100 < total; index++) {
-        setQueueProgress(`正在准备验证列表：${targets.size} 个作品`);
+        setQueueProgress(tr("正在准备验证列表：{n} 个作品", { n: targets.size }));
         const result = await api<LibraryPage>(
           `/library?kind=native&pageSize=100&page=${index}`,
         );
@@ -308,7 +310,7 @@ export function DownloadedPane({
       }
       const directories = Array.from(targets);
       for (let offset = 0; offset < directories.length; offset += 100) {
-        setQueueProgress(`正在加入验证队列：${offset} / ${directories.length}`);
+        setQueueProgress(tr("正在加入验证队列：{offset} / {total}", { offset, total: directories.length }));
         const queued = await api<Batch>("/library/repair/batch", {
           directories: directories.slice(offset, offset + 100),
         });
@@ -317,8 +319,8 @@ export function DownloadedPane({
       }
       notifications.show({
         color: failed ? "orange" : "teal",
-        title: "验证队列已更新",
-        message: `已加入 ${accepted} 个作品${failed ? `，${failed} 个未能加入（可能已有活动任务）` : ""}`,
+        title: tr("验证队列已更新"),
+        message: tr("已加入 {n} 个作品", { n: accepted }) + (failed ? tr("，{n} 个未能加入（可能已有活动任务）", { n: failed }) : ""),
       });
       if (accepted) onQueued();
     } catch (e) {
@@ -378,8 +380,8 @@ export function DownloadedPane({
         <div className="toolbar">
           <TextInput
             className="grow"
-            aria-label="搜索已下载"
-            placeholder="搜索已下载：标题、作者、ID 或 tag，如 female:glasses -tag:digital（按 / 聚焦）"
+            aria-label={tr("搜索已下载")}
+            placeholder={tr("搜索已下载：标题、作者、ID 或 tag，如 female:glasses -tag:digital（按 / 聚焦）")}
             data-hotkey-search
             value={query}
             onChange={(e) => {
@@ -389,7 +391,7 @@ export function DownloadedPane({
             leftSection={<IconSearch size={14} />}
           />
           <Select
-            aria-label="metadata 格式筛选"
+            aria-label={tr("metadata 格式筛选")}
             value={kind}
             onChange={(v) => {
               setKind(v);
@@ -397,15 +399,15 @@ export function DownloadedPane({
             }}
             allowDeselect={false}
             data={[
-              { value: "all", label: "全部作品" },
-              { value: "legacy", label: "待迁移" },
-              { value: "native", label: "已使用新 metadata" },
-              { value: "upstream", label: "上游有更新 / 已删除" },
+              { value: "all", label: tr("全部作品") },
+              { value: "legacy", label: tr("待迁移") },
+              { value: "native", label: tr("已使用新 metadata") },
+              { value: "upstream", label: tr("上游有更新 / 已删除") },
             ]}
             w={150}
           />
           <Select
-            aria-label="排序方式"
+            aria-label={tr("排序方式")}
             value={sort}
             onChange={(v) => {
               setSort(v);
@@ -413,20 +415,20 @@ export function DownloadedPane({
             }}
             allowDeselect={false}
             data={[
-              { value: "updated", label: "最近更新" },
-              { value: "created", label: "下载时间：新→旧" },
-              { value: "created-asc", label: "下载时间：旧→新" },
+              { value: "updated", label: tr("最近更新") },
+              { value: "created", label: tr("下载时间：新→旧") },
+              { value: "created-asc", label: tr("下载时间：旧→新") },
             ]}
             w={150}
           />
           <MultiSelect
-            aria-label="标签筛选"
-            placeholder={tagFilters.length ? undefined : "标签筛选（需同时满足）"}
+            aria-label={tr("标签筛选")}
+            placeholder={tagFilters.length ? undefined : tr("标签筛选（需同时满足）")}
             searchable
             clearable
             limit={50}
             hidePickedOptions
-            nothingFoundMessage="没有匹配的标签"
+            nothingFoundMessage={tr("没有匹配的标签")}
             data={tagOptions}
             value={tagFilters}
             onChange={(tags) => {
@@ -441,12 +443,12 @@ export function DownloadedPane({
             disabled={scanning || queueing}
             onClick={scan}
           >
-            重新扫描
+            {tr("重新扫描")}
           </Button>
           <Button
             variant="light"
             leftSection={<IconFileImport size={14} />}
-            title="迁移当前下载目录中的所有旧 metadata，不受筛选或分页限制；请先完成扫描"
+            title={tr("迁移当前下载目录中的所有旧 metadata，不受筛选或分页限制；请先完成扫描")}
             disabled={
               !data ||
               data.scan.state !== "completed" ||
@@ -455,12 +457,12 @@ export function DownloadedPane({
             }
             onClick={migrateAll}
           >
-            全部迁移
+            {tr("全部迁移")}
           </Button>
           <Button
             variant="light"
             leftSection={<IconShieldCheck size={14} />}
-            title="对比 Hitomi 信息并校验本地文件（每个作品请求一次 Hitomi）；上游有更新时只报告，不覆盖本地文件"
+            title={tr("对比 Hitomi 信息并校验本地文件（每个作品请求一次 Hitomi）；上游有更新时只报告，不覆盖本地文件")}
             disabled={
               scanning ||
               !data ||
@@ -469,7 +471,7 @@ export function DownloadedPane({
             }
             onClick={verifyAll}
           >
-            验证全部
+            {tr("验证全部")}
           </Button>
         </div>
         <div className="subbar">
@@ -477,16 +479,17 @@ export function DownloadedPane({
             {loading && !data ? (
               <>
                 <Loader size={10} mr={6} />
-                正在读取目录…
+                {tr("正在读取目录…")}
               </>
             ) : data ? (
               <>
-                {scanning ? "已发现" : "共"} {data.scan.found.toLocaleString()}{" "}
-                个作品
+                {scanning
+                  ? tr("已发现 {n} 个作品", { n: data.scan.found.toLocaleString() })
+                  : tr("共 {n} 个作品", { n: data.scan.found.toLocaleString() })}
                 {data.legacyTotal > 0 && (
                   <>
                     {" · "}
-                    {data.legacyTotal.toLocaleString()} 个待迁移
+                    {tr("{n} 个待迁移", { n: data.legacyTotal.toLocaleString() })}
                     <Tooltip label={MIGRATE_HINT} multiline w={260}>
                       <IconInfoCircle
                         size={13}
@@ -496,7 +499,7 @@ export function DownloadedPane({
                   </>
                 )}
                 {data.total !== data.scan.found &&
-                  ` · 筛选结果 ${data.total} 个`}
+                  ` · ${tr("筛选结果 {n} 个", { n: data.total })}`}
                 {queueProgress && ` · ${queueProgress}`}
               </>
             ) : null}
@@ -506,7 +509,7 @@ export function DownloadedPane({
               <>
                 <Checkbox
                   size="xs"
-                  label={`选择本页${selected.size ? ` · 已选 ${selected.size} 项` : ""}`}
+                  label={tr("选择本页") + (selected.size ? ` · ${tr("已选 {n} 项", { n: selected.size })}` : "")}
                   checked={pageSelected}
                   indeterminate={
                     !pageSelected &&
@@ -530,7 +533,7 @@ export function DownloadedPane({
                     disabled={queueing}
                     onClick={() => confirmBatch("migrate", legacySelected)}
                   >
-                    迁移所选（{legacySelected.length}）
+                    {tr("迁移所选（{n}）", { n: legacySelected.length })}
                   </Button>
                 ) : (
                   entries.some((e) => e.legacy) && (
@@ -545,7 +548,7 @@ export function DownloadedPane({
                         )
                       }
                     >
-                      迁移本页旧格式
+                      {tr("迁移本页旧格式")}
                     </Button>
                   )
                 )}
@@ -556,7 +559,7 @@ export function DownloadedPane({
                     disabled={queueing}
                     onClick={() => confirmBatch("repair", nativeSelected)}
                   >
-                    验证所选（{nativeSelected.length}）
+                    {tr("验证所选（{n}）", { n: nativeSelected.length })}
                   </Button>
                 )}
                 {updatable.length > 0 && (
@@ -564,11 +567,11 @@ export function DownloadedPane({
                     size="compact-xs"
                     variant="light"
                     color="blue"
-                    title="下载上游替换或新增的页面；被替换的旧页面保留在 superseded 目录"
+                    title={tr("下载上游替换或新增的页面；被替换的旧页面保留在 superseded 目录")}
                     disabled={queueing}
                     onClick={() => confirmBatch("update", updatable)}
                   >
-                    应用上游更新（{updatable.length}）
+                    {tr("应用上游更新（{n}）", { n: updatable.length })}
                   </Button>
                 )}
               </>
@@ -585,7 +588,7 @@ export function DownloadedPane({
                   setPage(1);
                 }}
               >
-                清除筛选
+                {tr("清除筛选")}
               </Button>
             )}
           </div>
@@ -602,8 +605,8 @@ export function DownloadedPane({
             >
               <Loader size={10} />
               <span style={{ flex: "none" }}>
-                {cancelling ? "正在取消扫描" : "后台扫描中"} · 已检查{" "}
-                {data?.scan.visited} 个目录
+                {cancelling ? tr("正在取消扫描") : tr("后台扫描中")} ·{" "}
+                {tr("已检查 {n} 个目录", { n: data?.scan.visited ?? 0 })}
               </span>
               <Text
                 span
@@ -624,14 +627,14 @@ export function DownloadedPane({
               loading={cancelling}
               onClick={cancelScan}
             >
-              取消扫描
+              {tr("取消扫描")}
             </Button>
           </div>
         )}
       </div>
       {data?.scan.state === "cancelled" && (
         <Alert color="gray" p="xs" mb="xs">
-          扫描已取消，已发现的结果仍可浏览。
+          {tr("扫描已取消，已发现的结果仍可浏览。")}
         </Alert>
       )}
       {error && (
@@ -646,7 +649,7 @@ export function DownloadedPane({
       )}
       {data && data.scan.warningCount > 0 && (
         <details className="scan-warnings">
-          <summary>{data.scan.warningCount} 个目录或 metadata 无法读取</summary>
+          <summary>{tr("{n} 个目录或 metadata 无法读取", { n: data.scan.warningCount })}</summary>
           {data.scan.warnings.map((w, i) => (
             <Text key={i} size="xs" className="path" mt={4}>
               {w}
@@ -661,11 +664,11 @@ export function DownloadedPane({
           const meta = [
             `#${entry.id}`,
             entry.artists.length ? entry.artists.join("、") : "",
-            entry.language || "未知语言",
+            entry.language || tr("未知语言"),
             entry.type,
-            `${entry.pages} 页`,
+            tr("{n} 页", { n: entry.pages }),
             entry.formats.join(" / ").toUpperCase(),
-            entry.createdAt ? `下载于 ${formatDay(entry.createdAt)}` : "",
+            entry.createdAt ? tr("下载于 {time}", { time: formatDay(entry.createdAt) }) : "",
           ].filter(Boolean);
           return (
             <Paper
@@ -676,13 +679,13 @@ export function DownloadedPane({
             >
               <Checkbox
                 size="xs"
-                aria-label={`选择作品 ${entry.id}`}
+                aria-label={tr("选择作品 {id}", { id: entry.id })}
                 checked={selected.has(entry.directory)}
                 onChange={() => toggle(entry)}
               />
               <Cover
                 src={coverUrl(entry)}
-                alt={`${main} 封面`}
+                alt={tr("{title} 封面", { title: main })}
                 onClick={() => setOpened(toOpened(entry))}
               />
               <div className="downloaded-info">
@@ -692,22 +695,22 @@ export function DownloadedPane({
                 >
                   {entry.legacy && (
                     <Badge size="xs" color="orange" variant="light">
-                      待迁移
+                      {tr("待迁移")}
                     </Badge>
                   )}
                   {entry.upstream === "changed" && (
                     <Badge size="xs" color="blue" variant="light">
-                      上游有更新
+                      {tr("上游有更新")}
                     </Badge>
                   )}
                   {entry.upstream === "deleted" && (
                     <Badge size="xs" color="gray" variant="light">
-                      上游已删除
+                      {tr("上游已删除")}
                     </Badge>
                   )}
                   {running && (
                     <Badge size="xs" variant="light">
-                      {running.operation === "migrate" ? "迁移中" : "处理中"}
+                      {running.operation === "migrate" ? tr("迁移中") : tr("处理中")}
                     </Badge>
                   )}
                   <span className="main-title" title={main}>
@@ -727,24 +730,24 @@ export function DownloadedPane({
                     </Fragment>
                   ))}
                   {entry.missing > 0 && (
-                    <span className="warn"> · {entry.missing} 页需要验证并补全</span>
+                    <span className="warn"> · {tr("{n} 页需要验证并补全", { n: entry.missing })}</span>
                   )}
                   {entry.upstream === "changed" && entry.upstreamNote && (
-                    <span className="info"> · 上游：{entry.upstreamNote}</span>
+                    <span className="info"> · {tr("上游：{note}", { note: entry.upstreamNote })}</span>
                   )}
                   {entry.fallbacks > 0 && (
-                    <span className="warn"> · {entry.fallbacks} 页使用衍生格式</span>
+                    <span className="warn"> · {tr("{n} 页使用衍生格式", { n: entry.fallbacks })}</span>
                   )}
                 </div>
                 <EntryTags tags={entry.tags || []} onSelect={addTagFilter} />
               </div>
               <div className="d-actions">
                 {entry.upstream === "changed" && (
-                  <Tooltip label="应用上游更新（旧页面保留在 superseded）">
+                  <Tooltip label={tr("应用上游更新（旧页面保留在 superseded）")}>
                     <ActionIcon
                       variant="light"
                       color="blue"
-                      aria-label="应用上游更新"
+                      aria-label={tr("应用上游更新")}
                       disabled={busy(entry) || queueing}
                       onClick={() => batch("update", [entry])}
                     >
@@ -752,10 +755,10 @@ export function DownloadedPane({
                     </ActionIcon>
                   </Tooltip>
                 )}
-                <Tooltip label={entry.legacy ? "迁移" : "验证并补全"}>
+                <Tooltip label={entry.legacy ? tr("迁移") : tr("验证并补全")}>
                   <ActionIcon
                     variant="light"
-                    aria-label={entry.legacy ? "迁移" : "验证并补全"}
+                    aria-label={entry.legacy ? tr("迁移") : tr("验证并补全")}
                     disabled={busy(entry) || queueing}
                     onClick={() =>
                       batch(entry.legacy ? "migrate" : "repair", [entry])
@@ -777,8 +780,8 @@ export function DownloadedPane({
         <Empty
           text={
             filtered
-              ? "没有匹配的已下载作品。"
-              : "没有发现已下载作品。可在设置中选择已有下载目录。"
+              ? tr("没有匹配的已下载作品。")
+              : tr("没有发现已下载作品。可在设置中选择已有下载目录。")
           }
         />
       )}
@@ -831,7 +834,7 @@ function EntryTags({
                   : "gray"
             }
             title={label}
-            aria-label={`按标签 ${label} 筛选`}
+            aria-label={tr("按标签 {label} 筛选", { label })}
             onClick={() => onSelect(value)}
             style={{ maxWidth: "100%", height: 18, paddingInline: 6 }}
           >
@@ -849,7 +852,7 @@ function EntryTags({
           style={{ height: 18, paddingInline: 6 }}
           onClick={() => setExpanded((v) => !v)}
         >
-          {expanded ? "收起" : `+${tags.length - TAG_LIMIT}`}
+          {expanded ? tr("收起") : `+${tags.length - TAG_LIMIT}`}
         </Button>
       )}
     </div>

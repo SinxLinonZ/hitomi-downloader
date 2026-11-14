@@ -13,6 +13,7 @@ import {
 import { useDebouncedValue } from "@mantine/hooks";
 import { IconAdjustmentsHorizontal, IconSearch, IconX } from "@tabler/icons-react";
 import { api } from "../api";
+import { LOCALES, LocaleSetting, savedSetting, setLocale, t } from "../i18n";
 import { loadProgress, loadSort, saveSort, SORT_OPTIONS, SortKey } from "./progress";
 import type { ReaderEntry, ReaderLibrary } from "./types";
 
@@ -111,12 +112,12 @@ export function ReaderList({
       <div className="r-top">
         <TextInput
           style={{ flex: 1 }}
-          aria-label="搜索作品"
-          placeholder="搜索标题、作者、标签"
+          aria-label={t("搜索作品")}
+          placeholder={t("搜索标题、作者、标签")}
           leftSection={<IconSearch size={18} />}
           rightSection={
             query ? (
-              <ActionIcon variant="subtle" color="gray" aria-label="清除搜索" onClick={() => { setQuery(""); setPage(1); }}>
+              <ActionIcon variant="subtle" color="gray" aria-label={t("清除搜索")} onClick={() => { setQuery(""); setPage(1); }}>
                 <IconX size={16} />
               </ActionIcon>
             ) : undefined
@@ -128,7 +129,7 @@ export function ReaderList({
           }}
         />
         <Indicator label={selected.length} size={16} disabled={selected.length === 0} color="teal">
-          <ActionIcon size={42} variant="default" aria-label="筛选" onClick={onFilterOpen}>
+          <ActionIcon size={42} variant="default" aria-label={t("筛选")} onClick={onFilterOpen}>
             <IconAdjustmentsHorizontal size={20} />
           </ActionIcon>
         </Indicator>
@@ -137,8 +138,10 @@ export function ReaderList({
         <span>
           {meta ? (
             <>
-              {meta.scanning ? "已发现" : "共"} {meta.found.toLocaleString()} 部
-              {meta.total !== meta.found && ` · 筛选结果 ${meta.total.toLocaleString()} 部`}
+              {meta.scanning
+                ? t("已发现 {n} 部", { n: meta.found.toLocaleString() })
+                : t("共 {n} 部", { n: meta.found.toLocaleString() })}
+              {meta.total !== meta.found && ` · ${t("筛选结果 {n} 部", { n: meta.total.toLocaleString() })}`}
               {meta.scanning && <Loader size={12} ml={8} />}
             </>
           ) : (
@@ -147,7 +150,7 @@ export function ReaderList({
         </span>
         {/* 手机ではネイティブの選択ダイアログが最も操作しやすい。 */}
         <NativeSelect
-          aria-label="排序方式"
+          aria-label={t("排序方式")}
           size="xs"
           value={sort}
           data={SORT_OPTIONS}
@@ -182,7 +185,7 @@ export function ReaderList({
             <button key={entry.id} type="button" className="r-card" onClick={() => onOpen(entry.id)} aria-label={title}>
               <div className="r-cover">
                 <img src={`/api/v1/reader/works/${entry.id}/cover`} alt="" loading="lazy" />
-                <span className="r-badge">{entry.pages} 页</span>
+                <span className="r-badge">{t("{n} 页", { n: entry.pages })}</span>
                 {p && p.page > 1 && (
                   <span className="r-progress" style={{ width: `${Math.min(100, (p.page / Math.max(1, p.total)) * 100)}%` }} />
                 )}
@@ -190,7 +193,7 @@ export function ReaderList({
               <div className="r-title">{title}</div>
               <div className="r-sub">
                 {entry.artists.length ? entry.artists.join("、") : entry.language}
-                {p && p.page > 1 && ` · 读到 ${p.page}/${p.total}`}
+                {p && p.page > 1 && ` · ${t("读到 {page}/{total}", { page: p.page, total: p.total })}`}
               </div>
             </button>
           );
@@ -198,17 +201,17 @@ export function ReaderList({
       </div>
       {meta && entries.length === 0 && !loading && (
         <Text c="dimmed" ta="center" my="xl">
-          {query || selected.length ? "没有匹配的作品" : meta.scanning ? "正在扫描下载目录…" : "没有发现作品"}
+          {query || selected.length ? t("没有匹配的作品") : meta.scanning ? t("正在扫描下载目录…") : t("没有发现作品")}
         </Text>
       )}
       <div ref={sentinel} className="r-more">
         {loading && entries.length > 0 && <Loader size="sm" />}
       </div>
-      <Drawer opened={filterOpen} onClose={onFilterClose} position="bottom" size="75%" title="按标签筛选" padding="md">
+      <Drawer opened={filterOpen} onClose={onFilterClose} position="bottom" size="75%" title={t("按标签筛选")} padding="md">
         <Text size="sm" c="dimmed" mb="xs">
-          选择多个标签时，需同时满足。
+          {t("选择多个标签时，需同时满足。")}
         </Text>
-        <TextInput aria-label="搜索标签" placeholder="搜索标签" leftSection={<IconSearch size={18} />} value={tagQuery} onChange={(e) => setTagQuery(e.currentTarget.value)} />
+        <TextInput aria-label={t("搜索标签")} placeholder={t("搜索标签")} leftSection={<IconSearch size={18} />} value={tagQuery} onChange={(e) => setTagQuery(e.currentTarget.value)} />
         {selected.length > 0 && (
           <Group gap={6} mt="sm">
             {selected.map((tag) => (
@@ -217,7 +220,7 @@ export function ReaderList({
               </Button>
             ))}
             <Button size="compact-md" variant="subtle" color="gray" onClick={() => resetTo([])}>
-              清除全部
+              {t("清除全部")}
             </Button>
           </Group>
         )}
@@ -229,12 +232,19 @@ export function ReaderList({
           ))}
           {tagOptions.length === 0 && (
             <Text size="sm" c="dimmed">
-              没有可选的标签
+              {t("没有可选的标签")}
             </Text>
           )}
         </Group>
-        <Button fullWidth mt="lg" onClick={onFilterClose}>
-          查看 {meta?.total.toLocaleString() ?? 0} 部作品
+        <NativeSelect
+          mt="lg"
+          label={t("界面语言")}
+          value={savedSetting()}
+          data={[{ value: "auto", label: t("自动") }, ...LOCALES]}
+          onChange={(e) => setLocale(e.currentTarget.value as LocaleSetting)}
+        />
+        <Button fullWidth mt="md" onClick={onFilterClose}>
+          {t("查看 {n} 部作品", { n: meta?.total.toLocaleString() ?? 0 })}
         </Button>
       </Drawer>
     </div>

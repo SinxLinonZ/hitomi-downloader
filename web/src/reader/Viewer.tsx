@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActionIcon, Loader, Slider, Text } from "@mantine/core";
 import { IconArrowLeft, IconBook2, IconLayoutRows, IconSwitchHorizontal } from "@tabler/icons-react";
-import { api } from "../api";
+import { api, ApiError } from "../api";
+import { t } from "../i18n";
 import { loadPrefs, loadProgress, Prefs, saveProgress, savePrefs } from "./progress";
 import type { ReaderWork } from "./types";
 
@@ -28,7 +29,7 @@ export function Viewer({ id, onClose }: { id: number; onClose: () => void }) {
         .catch((e) => {
           if (controller.signal.aborted) return;
           // 起動直後でまだ走査中の場合は、見つかるまで待つ。
-          if (/扫描中/.test(errorText(e))) timer = setTimeout(load, 1000);
+          if (e instanceof ApiError && e.code === "SCANNING") timer = setTimeout(load, 1000);
           else setError(errorText(e));
         });
     void load();
@@ -55,7 +56,7 @@ export function Viewer({ id, onClose }: { id: number; onClose: () => void }) {
   const total = work?.pageList.length ?? 0;
 
   return (
-    <div className="viewer" role="dialog" aria-label="阅览">
+    <div className="viewer" role="dialog" aria-label={t("阅览")}>
       {!work && !error && (
         <div className="v-center">
           <Loader />
@@ -75,16 +76,16 @@ export function Viewer({ id, onClose }: { id: number; onClose: () => void }) {
           <PagedMode id={id} work={work} page={page} rtl={prefs.rtl} onPage={setPage} onTap={() => setBar((b) => !b)} />
         ))}
       <div className={`v-bar v-top${bar ? "" : " v-hidden"}`}>
-        <ActionIcon variant="subtle" color="gray" size={42} aria-label="返回列表" onClick={onClose}>
+        <ActionIcon variant="subtle" color="gray" size={42} aria-label={t("返回列表")} onClick={onClose}>
           <IconArrowLeft size={22} />
         </ActionIcon>
         <div className="v-title">{title}</div>
         {prefs.mode === "paged" && (
-          <ActionIcon variant="subtle" color={prefs.rtl ? "teal" : "gray"} size={42} aria-label={prefs.rtl ? "右开（点左侧下一页）" : "左开（点右侧下一页）"} onClick={() => update({ rtl: !prefs.rtl })}>
+          <ActionIcon variant="subtle" color={prefs.rtl ? "teal" : "gray"} size={42} aria-label={prefs.rtl ? t("右开（点左侧下一页）") : t("左开（点右侧下一页）")} onClick={() => update({ rtl: !prefs.rtl })}>
             <IconSwitchHorizontal size={20} />
           </ActionIcon>
         )}
-        <ActionIcon variant="subtle" color="gray" size={42} aria-label={prefs.mode === "scroll" ? "切换为翻页模式" : "切换为滚动模式"} onClick={() => update({ mode: prefs.mode === "scroll" ? "paged" : "scroll" })}>
+        <ActionIcon variant="subtle" color="gray" size={42} aria-label={prefs.mode === "scroll" ? t("切换为翻页模式") : t("切换为滚动模式")} onClick={() => update({ mode: prefs.mode === "scroll" ? "paged" : "scroll" })}>
           {prefs.mode === "scroll" ? <IconBook2 size={20} /> : <IconLayoutRows size={20} />}
         </ActionIcon>
       </div>
@@ -95,7 +96,7 @@ export function Viewer({ id, onClose }: { id: number; onClose: () => void }) {
           </Text>
           <Slider
             style={{ flex: 1 }}
-            aria-label="跳转到页"
+            aria-label={t("跳转到页")}
             min={1}
             max={total}
             step={1}
@@ -118,11 +119,11 @@ function PageImage({ id, n, ratio, active }: { id: number; n: number; ratio?: nu
     <div className="pg" data-page={n} style={r ? { aspectRatio: String(r) } : { minHeight: "60vh" }}>
       {active &&
         (failed ? (
-          <div className="pg-missing">第 {n} 页缺失或格式不受支持</div>
+          <div className="pg-missing">{t("第 {n} 页缺失或格式不受支持", { n })}</div>
         ) : (
           <img
             src={pageUrl(id, n)}
-            alt={`第 ${n} 页`}
+            alt={t("第 {n} 页", { n })}
             decoding="async"
             onLoad={(e) => setNatural(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight)}
             onError={() => setFailed(true)}
@@ -185,7 +186,7 @@ function ScrollMode({ id, work, start, page, onPage, onTap, onScrollAway }: { id
       {work.pageList.map((p, i) => (
         <PageImage key={i} id={id} n={i + 1} ratio={p.w && p.h ? p.w / p.h : undefined} active={Math.abs(i + 1 - page) <= 4} />
       ))}
-      <div className="v-end">— 完 —</div>
+      <div className="v-end">{t("— 完 —")}</div>
     </div>
   );
 }
@@ -235,9 +236,9 @@ function PagedMode({ id, work, page, rtl, onPage, onTap }: { id: number; work: R
       }}
     >
       {failed === page ? (
-        <div className="pg-missing">第 {page} 页缺失或格式不受支持</div>
+        <div className="pg-missing">{t("第 {n} 页缺失或格式不受支持", { n: page })}</div>
       ) : (
-        <img key={page} src={pageUrl(id, page)} alt={`第 ${page} 页`} onError={() => setFailed(page)} />
+        <img key={page} src={pageUrl(id, page)} alt={t("第 {n} 页", { n: page })} onError={() => setFailed(page)} />
       )}
     </div>
   );

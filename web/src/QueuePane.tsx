@@ -24,6 +24,7 @@ import {
 } from "@tabler/icons-react";
 import { api, stateLabels, Task, TaskBatchResult } from "./api";
 import { useConfirm } from "./confirm";
+import { t as tr } from "./i18n";
 import {
   Empty,
   isActive,
@@ -89,20 +90,20 @@ export function QueuePane({
     const ok =
       action === "pause-all"
         ? await confirm({
-            title: "全部暂停",
-            message: `暂停 ${active} 个排队中和进行中的任务。已下载的页面会保留，之后可以继续。`,
-            confirmLabel: `暂停 ${active} 个任务`,
+            title: tr("全部暂停"),
+            message: tr("暂停 {n} 个排队中和进行中的任务。已下载的页面会保留，之后可以继续。", { n: active }),
+            confirmLabel: tr("暂停 {n} 个任务", { n: active }),
           })
         : action === "resume-all"
           ? await confirm({
-              title: "全部开始",
-              message: `开始 ${resumable} 个已暂停、失败或已取消的任务；已完成的任务会跳过。`,
-              confirmLabel: `开始 ${resumable} 个任务`,
+              title: tr("全部开始"),
+              message: tr("开始 {n} 个已暂停、失败或已取消的任务；已完成的任务会跳过。", { n: resumable }),
+              confirmLabel: tr("开始 {n} 个任务", { n: resumable }),
             })
           : await confirm({
-              title: "移除已完成任务",
-              message: `从队列中移除 ${completed} 条已完成的任务记录。下载的文件和 metadata 不会被删除，作品仍在“已下载”中。`,
-              confirmLabel: `移除 ${completed} 条记录`,
+              title: tr("移除已完成任务"),
+              message: tr("从队列中移除 {n} 条已完成的任务记录。下载的文件和 metadata 不会被删除，作品仍在“已下载”中。", { n: completed }),
+              confirmLabel: tr("移除 {n} 条记录", { n: completed }),
               color: "red",
             });
     if (!ok) return;
@@ -113,16 +114,16 @@ export function QueuePane({
       const problems = Object.entries(result.errors);
       const message =
         action === "clear-completed"
-          ? `已移除 ${result.affected} 个已完成任务，下载文件保持不变。`
+          ? tr("已移除 {n} 个已完成任务，下载文件保持不变。", { n: result.affected })
           : action === "pause-all"
-            ? `已暂停 ${result.affected} 个任务。`
-            : `已开始 ${result.affected} 个未完成任务。`;
+            ? tr("已暂停 {n} 个任务。", { n: result.affected })
+            : tr("已开始 {n} 个未完成任务。", { n: result.affected });
       notifications.show({
         color: problems.length ? "orange" : "teal",
-        title: problems.length ? "部分任务未能处理" : "队列已更新",
+        title: problems.length ? tr("部分任务未能处理") : tr("队列已更新"),
         message:
           message +
-          (problems.length ? ` ${problems.length} 个任务处理失败。` : ""),
+          (problems.length ? " " + tr("{n} 个任务处理失败。", { n: problems.length }) : ""),
       });
       if (problems.length)
         report(
@@ -132,7 +133,7 @@ export function QueuePane({
               .map(([id, error]) => `#${id}: ${error}`)
               .join("\n") +
               (problems.length > 5
-                ? `\n另有 ${problems.length - 5} 项错误。`
+                ? "\n" + tr("另有 {n} 项错误。", { n: problems.length - 5 })
                 : ""),
           ),
         );
@@ -155,21 +156,21 @@ export function QueuePane({
               setPage(1);
             }}
             data={[
-              { value: "all", label: `全部 ${tasks.length}` },
-              { value: "active", label: `进行中 ${active}` },
-              { value: "resumable", label: `待恢复 ${resumable}` },
-              { value: "done", label: `已完成 ${completed}` },
+              { value: "all", label: tr("全部 {n}", { n: tasks.length }) },
+              { value: "active", label: tr("进行中 {n}", { n: active }) },
+              { value: "resumable", label: tr("待恢复 {n}", { n: resumable }) },
+              { value: "done", label: tr("已完成 {n}", { n: completed }) },
             ]}
           />
           <Button
             variant="light"
             leftSection={<IconPlayerPlay size={14} />}
-            title="恢复暂停、失败和已取消的未完成任务，跳过已完成任务"
+            title={tr("恢复暂停、失败和已取消的未完成任务，跳过已完成任务")}
             disabled={queueAction !== null || resumable === 0}
             loading={queueAction === "resume-all"}
             onClick={() => controlQueue("resume-all")}
           >
-            全部开始
+            {tr("全部开始")}
           </Button>
           <Button
             variant="default"
@@ -178,25 +179,25 @@ export function QueuePane({
             loading={queueAction === "pause-all"}
             onClick={() => controlQueue("pause-all")}
           >
-            全部暂停
+            {tr("全部暂停")}
           </Button>
           <Button
             variant="subtle"
             color="gray"
             leftSection={<IconTrash size={14} />}
-            title="仅移除任务记录，不删除下载文件或 metadata"
+            title={tr("仅移除任务记录，不删除下载文件或 metadata")}
             disabled={queueAction !== null || completed === 0}
             loading={queueAction === "clear-completed"}
             onClick={() => controlQueue("clear-completed")}
           >
-            移除已完成任务（{completed}）
+            {tr("移除已完成任务（{n}）", { n: completed })}
           </Button>
         </div>
       </div>
       {tasks.length === 0 ? (
-        <Empty text="下载队列还是空的，去搜索中添加作品吧。" />
+        <Empty text={tr("下载队列还是空的，去搜索中添加作品吧。")} />
       ) : shown.length === 0 ? (
-        <Empty text="当前筛选下没有任务。" />
+        <Empty text={tr("当前筛选下没有任务。")} />
       ) : (
         <Paper withBorder>
           <Table.ScrollContainer minWidth={560}>
@@ -240,8 +241,9 @@ export function QueuePane({
                       )}
                       {Object.keys(t.errors).length > 0 && (
                         <div className="q-note" style={{ color: "var(--mantine-color-red-4)" }}>
-                          {Object.keys(t.errors).length} 页
-                          {t.operation === "migrate" ? "待补全" : "失败"}
+                          {t.operation === "migrate"
+                            ? tr("{n} 页待补全", { n: Object.keys(t.errors).length })
+                            : tr("{n} 页失败", { n: Object.keys(t.errors).length })}
                         </div>
                       )}
                     </Table.Td>
@@ -254,7 +256,7 @@ export function QueuePane({
                           color={t.state === "failed" ? "red" : "teal"}
                         />
                         <span>
-                          {t.done} / {t.total || "—"} 页
+                          {tr("{done} / {total} 页", { done: t.done, total: t.total || "—" })}
                         </span>
                       </div>
                     </Table.Td>
@@ -264,11 +266,11 @@ export function QueuePane({
                       onClick={(e) => e.stopPropagation()}
                     >
                       {isActive(t) ? (
-                        <Tooltip label="暂停">
+                        <Tooltip label={tr("暂停")}>
                           <ActionIcon
                             variant="subtle"
                             color="gray"
-                            aria-label="暂停"
+                            aria-label={tr("暂停")}
                             disabled={queueAction !== null}
                             onClick={() => control(t.id, "pause")}
                           >
@@ -277,10 +279,10 @@ export function QueuePane({
                         </Tooltip>
                       ) : (
                         t.state !== "completed" && (
-                          <Tooltip label="继续 / 重试">
+                          <Tooltip label={tr("继续 / 重试")}>
                             <ActionIcon
                               variant="subtle"
-                              aria-label="继续 / 重试"
+                              aria-label={tr("继续 / 重试")}
                               disabled={queueAction !== null}
                               onClick={() => control(t.id, "resume")}
                             >
@@ -290,11 +292,11 @@ export function QueuePane({
                         )
                       )}
                       {t.state !== "completed" && t.state !== "cancelled" && (
-                        <Tooltip label="取消">
+                        <Tooltip label={tr("取消")}>
                           <ActionIcon
                             variant="subtle"
                             color="gray"
-                            aria-label="取消"
+                            aria-label={tr("取消")}
                             disabled={queueAction !== null}
                             onClick={() => control(t.id, "cancel")}
                           >
@@ -302,10 +304,10 @@ export function QueuePane({
                           </ActionIcon>
                         </Tooltip>
                       )}
-                      <Tooltip label="详情">
+                      <Tooltip label={tr("详情")}>
                         <ActionIcon
                           variant="subtle"
-                          aria-label="详情"
+                          aria-label={tr("详情")}
                           onClick={() => setDetailId(t.id)}
                         >
                           <IconListDetails size={16} />
@@ -328,7 +330,7 @@ export function QueuePane({
       <Drawer
         opened={!!detail}
         onClose={() => setDetailId(undefined)}
-        title="任务详情"
+        title={tr("任务详情")}
         position="right"
         padding="md"
       >
@@ -343,7 +345,7 @@ function TaskDetail({ t }: { t: Task }) {
     <>
       <Text fw={600}>{taskTitle(t)}</Text>
       <Text size="sm" mt={4}>
-        {stateLabels[t.state]} · {t.done}/{t.total} 页
+        {stateLabels[t.state]} · {tr("{done}/{total} 页", { done: t.done, total: t.total })}
       </Text>
       {t.error && (
         <Alert color="red" mt="xs" p="xs">
@@ -362,7 +364,7 @@ function TaskDetail({ t }: { t: Task }) {
         {Object.entries(t.errors).map(([page, error]) => (
           <Paper key={page} withBorder px="xs" py={4} mb={4}>
             <Text size="xs" fw={600} span>
-              第 {page} 页
+              {tr("第 {page} 页", { page })}
             </Text>{" "}
             <Text size="xs" c="red" span>
               {error}
@@ -372,8 +374,8 @@ function TaskDetail({ t }: { t: Task }) {
       </ScrollArea>
       <Text size="xs" c="dimmed" mt="xs">
         {t.operation === "migrate"
-          ? "迁移仅处理现有图片；完成后可从“已下载”验证并补全。"
-          : "继续 / 重试会校验所有已完成文件，只补全缺失或损坏页面。"}
+          ? tr("迁移仅处理现有图片；完成后可从“已下载”验证并补全。")
+          : tr("继续 / 重试会校验所有已完成文件，只补全缺失或损坏页面。")}
       </Text>
     </>
   );

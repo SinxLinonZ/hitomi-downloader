@@ -1,5 +1,6 @@
 import { ReactNode, useCallback, useState } from "react";
 import { Button, Group, Modal, Text } from "@mantine/core";
+import { t } from "./i18n";
 
 export type ConfirmOptions = {
   title: string;
@@ -37,7 +38,7 @@ export function useConfirm() {
       </Text>
       <Group justify="flex-end" mt="md" gap="xs">
         <Button variant="default" data-autofocus onClick={() => finish(false)}>
-          取消
+          {t("取消")}
         </Button>
         <Button color={state?.color} onClick={() => finish(true)}>
           {state?.confirmLabel}
