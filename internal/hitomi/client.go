@@ -73,7 +73,8 @@ type Client struct {
 
 func New(proxy string) (*Client, error) {
 	t := http.DefaultTransport.(*http.Transport).Clone()
-	t.MaxConnsPerHost = 6
+	// 並行数の設定（最大 8 タスク × 16 ページ）で接続数が先に頭打ちにならないようにする。
+	t.MaxConnsPerHost = 32
 	t.ResponseHeaderTimeout = 20 * time.Second
 	if proxy == "direct" {
 		t.Proxy = nil

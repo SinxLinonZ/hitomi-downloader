@@ -27,8 +27,8 @@ func seedTask(t *testing.T, m *Manager, id int, state string) {
 
 func TestControlAllPauseAndImmediatelyResume(t *testing.T) {
 	m, _, _ := fixture(t)
-	m.slots <- struct{}{}
-	m.slots <- struct{}{}
+	_ = m.taskLimit.acquire(context.Background())
+	_ = m.taskLimit.acquire(context.Background())
 	for _, id := range []int{42, 43} {
 		if e := m.Start(id, "", "download"); e != nil {
 			t.Fatal(e)
@@ -177,7 +177,7 @@ func TestRemoveCompletedWaitCanBeCancelled(t *testing.T) {
 
 func TestPauseAllCancelsRunningAndQueuedWorkers(t *testing.T) {
 	m, _, _ := fixture(t)
-	m.slots <- struct{}{}
+	_ = m.taskLimit.acquire(context.Background())
 	old := m.client.HTTP.Transport
 	entered := make(chan struct{}, 2)
 	m.client.HTTP.Transport = rt(func(r *http.Request) (*http.Response, error) {
@@ -215,8 +215,8 @@ func TestPauseAllCancelsRunningAndQueuedWorkers(t *testing.T) {
 
 func TestResumeAllReportsForeignRootWithoutBlockingOtherTasks(t *testing.T) {
 	m, _, _ := fixture(t)
-	m.slots <- struct{}{}
-	m.slots <- struct{}{}
+	_ = m.taskLimit.acquire(context.Background())
+	_ = m.taskLimit.acquire(context.Background())
 	seedTask(t, m, 42, "paused")
 	seedTask(t, m, 43, "paused")
 	m.mu.Lock()

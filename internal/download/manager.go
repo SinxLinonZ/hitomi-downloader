@@ -83,11 +83,13 @@ type Manager struct {
 	client  *hitomi.Client
 	root    string
 	state   string
-	slots   chan struct{}
-	mslots  chan struct{}
-	wg      sync.WaitGroup
-	closing bool
-	library libraryIndex
+	// 実行中のタスク数の上限（ダウンロード・検証・更新）と、移行専用の上限。
+	taskLimit    *limiter
+	migrateLimit *limiter
+	pageWorkers  int // 1 タスク内で同時に処理するページ数。新たに開始・再開するタスクから反映される
+	wg           sync.WaitGroup
+	closing      bool
+	library      libraryIndex
 	// 直近で Hitomi への接続に失敗した時刻（検証の一括実行で無駄な待機を避ける）。
 	upstreamDown time.Time
 }
@@ -133,7 +135,7 @@ func New(client *hitomi.Client, root, state string) (*Manager, error) {
 	if e = os.MkdirAll(filepath.Join(state, "tasks"), 0700); e != nil {
 		return nil, e
 	}
-	m := &Manager{tasks: map[int]*Task{}, cancel: map[int]context.CancelFunc{}, settled: map[int]chan struct{}{}, client: client, root: root, state: state, slots: make(chan struct{}, 2), mslots: make(chan struct{}, migrateSlots)}
+	m := &Manager{tasks: map[int]*Task{}, cancel: map[int]context.CancelFunc{}, settled: map[int]chan struct{}{}, client: client, root: root, state: state, taskLimit: newLimiter(DefaultTaskConcurrency), migrateLimit: newLimiter(migrateSlots), pageWorkers: DefaultPageConcurrency}
 	files, e := os.ReadDir(filepath.Join(state, "tasks"))
 	if e != nil {
 		return nil, e
@@ -164,6 +166,41 @@ func New(client *hitomi.Client, root, state string) (*Manager, error) {
 	}
 	return m, nil
 }
+
+const (
+	DefaultTaskConcurrency = 2
+	DefaultPageConcurrency = 4
+	MaxTaskConcurrency     = 8
+	MaxPageConcurrency     = 16
+)
+
+// Concurrency は現在の「同時タスク数」と「タスクあたりの同時ページ数」を返す。
+func (m *Manager) Concurrency() (tasks, pages int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.taskLimit.get(), m.pageWorkers
+}
+
+// SetConcurrency は並行数を設定する。0 は「変更しない」。
+// タスク数は待機中のタスクにも即座に反映され、ページ数は新たに開始・再開するタスクから反映される。
+func (m *Manager) SetConcurrency(tasks, pages int) error {
+	if tasks < 0 || tasks > MaxTaskConcurrency {
+		return fmt.Errorf("同时任务数需在 1–%d 之间", MaxTaskConcurrency)
+	}
+	if pages < 0 || pages > MaxPageConcurrency {
+		return fmt.Errorf("每个任务的并发文件数需在 1–%d 之间", MaxPageConcurrency)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if tasks > 0 {
+		m.taskLimit.setLimit(tasks)
+	}
+	if pages > 0 {
+		m.pageWorkers = pages
+	}
+	return nil
+}
+
 func (m *Manager) Root() string { m.mu.Lock(); defer m.mu.Unlock(); return m.root }
 func (m *Manager) SetRoot(root string) error {
 	root, e := filepath.Abs(root)
@@ -327,17 +364,15 @@ func (m *Manager) run(ctx context.Context, id int) {
 	defer m.wg.Done()
 	defer func() { m.mu.Lock(); delete(m.cancel, id); close(m.settled[id]); delete(m.settled, id); m.mu.Unlock() }()
 	m.mu.Lock()
-	slots := m.slots
+	limit := m.taskLimit
 	if m.tasks[id].Operation == "migrate" {
-		slots = m.mslots
+		limit = m.migrateLimit
 	}
 	m.mu.Unlock()
-	select {
-	case slots <- struct{}{}:
-		defer func() { <-slots }()
-	case <-ctx.Done():
+	if e := limit.acquire(ctx); e != nil {
 		return
 	}
+	defer limit.release()
 	if ctx.Err() != nil {
 		return
 	}
@@ -491,6 +526,7 @@ func (m *Manager) process(ctx context.Context, id int) error {
 	if e = os.MkdirAll(dir, 0755); e != nil {
 		return e
 	}
+	cleanStaleTemp(dir)
 	// 検証・更新では Hitomi の最新情報と比較し、「ローカルの破損」と「上流の更新」を区別する。
 	var rs remoteState
 	if task.Operation == "repair" || task.Operation == "update" {
@@ -564,7 +600,10 @@ func (m *Manager) process(ctx context.Context, id int) error {
 	}
 	jobs := make(chan int)
 	var wg sync.WaitGroup
-	for w := 0; w < 4; w++ {
+	m.mu.Lock()
+	workers := m.pageWorkers
+	m.mu.Unlock()
+	for w := 0; w < workers; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -669,6 +708,21 @@ send:
 	}
 	m.refreshIndex(final)
 	return m.update(id, func(t *Task) { t.Directory = final })
+}
+
+// 強制終了などで残った書きかけのページ（.page-*.part）を削除する。
+// 完成済みのページや metadata には触れない。放置すると完成時にそのまま作品ディレクトリへ移動してしまう。
+func cleanStaleTemp(dir string) {
+	entries, e := os.ReadDir(dir)
+	if e != nil {
+		return
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !entry.IsDir() && strings.HasPrefix(name, ".page-") && strings.HasSuffix(name, ".part") {
+			_ = os.Remove(filepath.Join(dir, name))
+		}
+	}
 }
 
 type byteCounter struct{ n int64 }

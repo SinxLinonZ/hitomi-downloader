@@ -336,3 +336,96 @@ func TestMissingOriginalHostFallsBackWithoutRetryDelay(t *testing.T) {
 		t.Fatal("DNS failure was retried with backoff")
 	}
 }
+
+func TestTaskConcurrencyLimitsRunningTasksAndAppliesLive(t *testing.T) {
+	m, _, _ := fixture(t)
+	if e := m.SetConcurrency(1, 2); e != nil {
+		t.Fatal(e)
+	}
+	old := m.client.HTTP.Transport
+	var mu sync.Mutex
+	inflight, peak := 0, 0
+	release := make(chan struct{})
+	m.client.HTTP.Transport = rt(func(r *http.Request) (*http.Response, error) {
+		// 夹具的 gallery 固定为 42，这里按请求的 ID 返回，使 43 号任务也有效。
+		if strings.HasSuffix(r.URL.Path, ".js") && strings.Contains(r.URL.Path, "galleries/") {
+			id := strings.TrimSuffix(filepath.Base(r.URL.Path), ".js")
+			b := []byte(`var galleryinfo = {"id":"` + id + `","title":"Fixture","files":[{"name":"a.png","hash":"` + strings.Repeat("a", 64) + `"},{"name":"b.png","hash":"` + strings.Repeat("b", 64) + `"}]}`)
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(bytes.NewReader(b)), ContentLength: int64(len(b)), Request: r}, nil
+		}
+		if strings.HasSuffix(r.URL.Path, ".webp") || strings.HasSuffix(r.URL.Path, ".png") {
+			mu.Lock()
+			inflight++
+			if inflight > peak {
+				peak = inflight
+			}
+			mu.Unlock()
+			select {
+			case <-release:
+			case <-r.Context().Done():
+			}
+			mu.Lock()
+			inflight--
+			mu.Unlock()
+		}
+		return old.RoundTrip(r)
+	})
+	for _, id := range []int{42, 43} {
+		if e := m.Start(id, "", "download"); e != nil {
+			t.Fatal(e)
+		}
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := inflight
+		mu.Unlock()
+		if n >= 2 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// 同时任务数为 1、每任务 2 页并发：只有第一个任务在取图，最多 2 个请求。
+	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
+	if peak != 2 {
+		t.Fatalf("expected 2 concurrent page requests from one task, got %d", peak)
+	}
+	mu.Unlock()
+	running := 0
+	for _, task := range m.List() {
+		if task.State == "running" {
+			running++
+		}
+	}
+	if running != 1 {
+		t.Fatalf("expected 1 running task, got %d", running)
+	}
+	// 上限を上げると、待機中のタスクがすぐに動き出す。
+	if e := m.SetConcurrency(2, 0); e != nil {
+		t.Fatal(e)
+	}
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		running = 0
+		for _, task := range m.List() {
+			if task.State == "running" {
+				running++
+			}
+		}
+		if running == 2 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if running != 2 {
+		t.Fatalf("raising the limit did not start the waiting task (running=%d)", running)
+	}
+	close(release)
+	if e := m.SetConcurrency(9, 0); e == nil {
+		t.Fatal("accepted out-of-range task concurrency")
+	}
+	if e := m.SetConcurrency(0, 17); e == nil {
+		t.Fatal("accepted out-of-range page concurrency")
+	}
+}

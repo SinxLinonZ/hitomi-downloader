@@ -99,3 +99,8 @@ export const stateLabels: Record<string, string> = {
   failed: "失败",
   completed: "已完成",
 };
+export type Settings = {
+  downloadDir: string;
+  taskConcurrency?: number;
+  pageConcurrency?: number;
+};

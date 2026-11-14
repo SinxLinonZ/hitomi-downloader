@@ -31,6 +31,8 @@ func run() error {
 	state := flag.String("data-dir", "./data", "配置和任务记录目录")
 	root := flag.String("download-dir", "", "下载目录（覆盖已保存设置）")
 	proxy := flag.String("proxy", "", "Proxy URL；direct 禁用 Proxy；默认使用环境变量")
+	taskConc := flag.Int("task-concurrency", 0, "同时处理的任务数（覆盖已保存设置，默认 2）")
+	pageConc := flag.Int("page-concurrency", 0, "每个任务的并发文件数（覆盖已保存设置，默认 4）")
 	noOpen := flag.Bool("no-open", false, "不自动打开浏览器")
 	flag.Parse()
 	statePath, e := filepath.Abs(*state)
@@ -38,20 +40,26 @@ func run() error {
 		return e
 	}
 	configPath := filepath.Join(statePath, "config.json")
+	// 保存済みの設定を読み、CLI 引数で指定された項目だけを上書きする。
+	var saved server.Config
+	if b, e := os.ReadFile(configPath); e == nil {
+		if e = json.Unmarshal(b, &saved); e != nil {
+			return fmt.Errorf("配置损坏：%w", e)
+		}
+	} else if !os.IsNotExist(e) {
+		return e
+	}
 	if *root == "" {
-		b, e := os.ReadFile(configPath)
-		if e == nil {
-			var c server.Config
-			if e = json.Unmarshal(b, &c); e != nil {
-				return fmt.Errorf("配置损坏：%w", e)
-			}
-			*root = c.DownloadDir
-		} else if !os.IsNotExist(e) {
-			return e
-		}
-		if *root == "" {
-			*root = "./downloads"
-		}
+		*root = saved.DownloadDir
+	}
+	if *root == "" {
+		*root = "./downloads"
+	}
+	if *taskConc == 0 {
+		*taskConc = saved.TaskConcurrency
+	}
+	if *pageConc == 0 {
+		*pageConc = saved.PageConcurrency
 	}
 	client, e := hitomi.New(*proxy)
 	if e != nil {
@@ -62,6 +70,9 @@ func run() error {
 		return e
 	}
 	defer manager.Close()
+	if e := manager.SetConcurrency(*taskConc, *pageConc); e != nil {
+		return e
+	}
 	app := server.New(client, manager, statePath)
 	listener, e := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *port))
 	if e != nil {

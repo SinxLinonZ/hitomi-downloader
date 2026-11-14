@@ -63,7 +63,7 @@ func TestLocalSessionAndOrigin(t *testing.T) {
 func TestSettingsPersistAndLibraryScans(t *testing.T) {
 	s := setup(t)
 	dir := t.TempDir()
-	b, _ := json.Marshal(Config{dir})
+	b, _ := json.Marshal(Config{DownloadDir: dir})
 	w := call(s, "PUT", "/api/v1/settings", string(b), "", true)
 	if w.Code != 200 || s.Downloads.Root() != dir {
 		t.Fatal(w.Code, w.Body)
@@ -380,5 +380,41 @@ func TestLibraryUpdateEndpointRequiresSessionAndRejectsOutsideDirectories(t *tes
 	}
 	if w = call(s, "POST", "/api/v1/library/update", `{"directories":[]}`, "", true); w.Code == 200 {
 		t.Fatal("accepted an empty selection")
+	}
+}
+
+func TestConcurrencySettingsPersistAndValidate(t *testing.T) {
+	s := setup(t)
+	dir := s.Downloads.Root()
+	if w := call(s, "GET", "/api/v1/settings", "", "", true); !strings.Contains(w.Body.String(), `"taskConcurrency":2`) || !strings.Contains(w.Body.String(), `"pageConcurrency":4`) {
+		t.Fatalf("defaults missing: %s", w.Body)
+	}
+	body, _ := json.Marshal(Config{DownloadDir: dir, TaskConcurrency: 3, PageConcurrency: 6})
+	if w := call(s, "PUT", "/api/v1/settings", string(body), "", true); w.Code != 200 {
+		t.Fatal(w.Code, w.Body)
+	}
+	if tasks, pages := s.Downloads.Concurrency(); tasks != 3 || pages != 6 {
+		t.Fatal(tasks, pages)
+	}
+	saved, _ := os.ReadFile(filepath.Join(s.StateDir, "config.json"))
+	if !strings.Contains(string(saved), `"taskConcurrency": 3`) || !strings.Contains(string(saved), `"pageConcurrency": 6`) {
+		t.Fatalf("not persisted: %s", saved)
+	}
+	// 只更新下载目录时，并发数保持不变。
+	body, _ = json.Marshal(Config{DownloadDir: dir})
+	if w := call(s, "PUT", "/api/v1/settings", string(body), "", true); w.Code != 200 {
+		t.Fatal(w.Code, w.Body)
+	}
+	if tasks, pages := s.Downloads.Concurrency(); tasks != 3 || pages != 6 {
+		t.Fatal("omitted values reset the concurrency", tasks, pages)
+	}
+	for _, bad := range []Config{{DownloadDir: dir, TaskConcurrency: 99}, {DownloadDir: dir, PageConcurrency: 99}, {DownloadDir: dir, TaskConcurrency: -1}} {
+		body, _ = json.Marshal(bad)
+		if w := call(s, "PUT", "/api/v1/settings", string(body), "", true); w.Code == 200 {
+			t.Fatalf("accepted %+v", bad)
+		}
+	}
+	if tasks, pages := s.Downloads.Concurrency(); tasks != 3 || pages != 6 {
+		t.Fatal("rejected request changed the concurrency", tasks, pages)
 	}
 }

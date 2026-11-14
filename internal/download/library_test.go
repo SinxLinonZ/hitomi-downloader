@@ -342,8 +342,8 @@ func TestMigrationTargetsSkipActiveTasksAndRejectStaleRoot(t *testing.T) {
 	first, _ := legacyFixture(t, m, 123, 1)
 	second, _ := legacyFixture(t, m, 124, 1)
 	_ = indexReady(t, m)
-	m.slots <- struct{}{}
-	m.slots <- struct{}{}
+	_ = m.taskLimit.acquire(context.Background())
+	_ = m.taskLimit.acquire(context.Background())
 	if e := m.Migrate(first); e != nil {
 		t.Fatal(e)
 	}

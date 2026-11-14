@@ -12,6 +12,7 @@ import {
   Modal,
   MultiSelect,
   NavLink,
+  NumberInput,
   Pagination,
   Paper,
   Select,
@@ -33,7 +34,7 @@ import {
   IconSearch,
   IconSettings,
 } from "@tabler/icons-react";
-import { api } from "./api";
+import { api, Settings } from "./api";
 import { report } from "./common";
 import { DownloadedPane } from "./DownloadedPane";
 import { QueuePane } from "./QueuePane";
@@ -97,11 +98,21 @@ function App() {
     useDisclosure();
   const [directory, setDirectory] = useState("");
   const [draftDirectory, setDraftDirectory] = useState("");
+  // 並行数の既定値（サーバー側の既定と一致させる）。
+  const [concurrency, setConcurrency] = useState({ tasks: 2, pages: 4 });
+  const [draftTasks, setDraftTasks] = useState<number | string>(2);
+  const [draftPages, setDraftPages] = useState<number | string>(4);
   const [settings, { open, close }] = useDisclosure();
 
   useEffect(() => {
-    api<{ downloadDir: string }>("/settings")
-      .then((c) => setDirectory(c.downloadDir))
+    api<Settings>("/settings")
+      .then((c) => {
+        setDirectory(c.downloadDir);
+        setConcurrency({
+          tasks: c.taskConcurrency || 2,
+          pages: c.pageConcurrency || 4,
+        });
+      })
       .catch(report);
   }, []);
   useEffect(() => {
@@ -245,6 +256,8 @@ function App() {
               leftSection={<IconSettings size={18} />}
               onClick={() => {
                 setDraftDirectory(directory);
+                setDraftTasks(concurrency.tasks);
+                setDraftPages(concurrency.pages);
                 closeMobile();
                 open();
               }}
@@ -312,6 +325,29 @@ function App() {
             value={draftDirectory}
             onChange={(e) => setDraftDirectory(e.currentTarget.value)}
           />
+          <NumberInput
+            label="同时处理的任务数"
+            description="同时下载、验证、更新的作品数（1–8），对排队中的任务立即生效。"
+            min={1}
+            max={8}
+            allowDecimal={false}
+            allowNegative={false}
+            value={draftTasks}
+            onChange={setDraftTasks}
+          />
+          <NumberInput
+            label="每个任务的并发文件数"
+            description="一个任务内同时取图的页数（1–16），对新开始或继续的任务生效。"
+            min={1}
+            max={16}
+            allowDecimal={false}
+            allowNegative={false}
+            value={draftPages}
+            onChange={setDraftPages}
+          />
+          <Text size="xs" c="dimmed">
+            对 Hitomi 的请求仍有全局间隔限制，并发数调得过高不会成比例提速，也可能触发限流。
+          </Text>
           <Alert
             color="teal"
             p="xs"
@@ -327,12 +363,20 @@ function App() {
           <Button
             onClick={async () => {
               try {
-                const c = await api<{ downloadDir: string }>(
+                const c = await api<Settings>(
                   "/settings",
-                  { downloadDir: draftDirectory },
+                  {
+                    downloadDir: draftDirectory,
+                    taskConcurrency: Number(draftTasks) || 0,
+                    pageConcurrency: Number(draftPages) || 0,
+                  },
                   "PUT",
                 );
                 setDirectory(c.downloadDir);
+                setConcurrency({
+                  tasks: c.taskConcurrency || 2,
+                  pages: c.pageConcurrency || 4,
+                });
                 close();
               } catch (e) {
                 report(e);

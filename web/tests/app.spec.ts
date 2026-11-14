@@ -174,6 +174,11 @@ test("设置下载目录后扫描新目录", async ({ page }) => {
   await page.goto(startup);
   await page.getByRole("button", { name: "设置", exact: true }).click();
   await page.getByLabel("下载目录", { exact: true }).fill(newDir);
+  // 并发数的默认值来自服务端，可修改并持久化。
+  await expect(page.getByLabel("同时处理的任务数")).toHaveValue("2");
+  await expect(page.getByLabel("每个任务的并发文件数")).toHaveValue("4");
+  await page.getByLabel("同时处理的任务数").fill("3");
+  await page.getByLabel("每个任务的并发文件数").fill("6");
   await page.getByRole("button", { name: "保存设置" }).click();
   await page.getByRole("button", { name: "已下载", exact: true }).click();
   await expect(
@@ -183,6 +188,8 @@ test("设置下载目录后扫描新目录", async ({ page }) => {
     await readFile(join(root, "data", "config.json"), "utf8"),
   );
   expect(saved.downloadDir).toBe(newDir);
+  expect(saved.taskConcurrency).toBe(3);
+  expect(saved.pageConcurrency).toBe(6);
 });
 
 test("移动端侧栏可打开并在切换页面后收起", async ({ page }) => {

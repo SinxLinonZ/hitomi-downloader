@@ -27,6 +27,9 @@ import (
 
 type Config struct {
 	DownloadDir string `json:"downloadDir"`
+	// 並行数。0 は未指定（保存済み・既定値のまま）を表す。GET は常に実効値を返す。
+	TaskConcurrency int `json:"taskConcurrency,omitempty"`
+	PageConcurrency int `json:"pageConcurrency,omitempty"`
 }
 type searchSession struct {
 	IDs []int
@@ -52,6 +55,11 @@ func New(c *hitomi.Client, m *download.Manager, state string) *Server {
 	return &Server{Client: c, Downloads: m, Token: hex.EncodeToString(b), StateDir: state, sessions: map[string]searchSession{}, shutdown: make(chan struct{})}
 }
 
+// currentConfig は実際に適用されている設定（並行数は 0 にならない）を返す。
+func (s *Server) currentConfig() Config {
+	tasks, pages := s.Downloads.Concurrency()
+	return Config{DownloadDir: s.Downloads.Root(), TaskConcurrency: tasks, PageConcurrency: pages}
+}
 func (s *Server) RequestShutdown()                   { s.shutdownOnce.Do(func() { close(s.shutdown) }) }
 func (s *Server) ShutdownRequested() <-chan struct{} { return s.shutdown }
 
@@ -287,7 +295,7 @@ func (s *Server) Handler() http.Handler {
 		}
 		jsonOut(w, map[string]any{"accepted": accepted, "errors": problems})
 	})
-	mux.HandleFunc("GET /api/v1/settings", func(w http.ResponseWriter, r *http.Request) { jsonOut(w, Config{s.Downloads.Root()}) })
+	mux.HandleFunc("GET /api/v1/settings", func(w http.ResponseWriter, r *http.Request) { jsonOut(w, s.currentConfig()) })
 	mux.HandleFunc("PUT /api/v1/settings", func(w http.ResponseWriter, r *http.Request) {
 		s.settingsMu.Lock()
 		defer s.settingsMu.Unlock()
@@ -300,17 +308,28 @@ func (s *Server) Handler() http.Handler {
 			fail(w, fmt.Errorf("请填写绝对路径"))
 			return
 		}
-		old := s.Downloads.Root()
+		old := s.currentConfig()
+		if c.TaskConcurrency < 0 || c.PageConcurrency < 0 {
+			fail(w, fmt.Errorf("并发数必须为正整数"))
+			return
+		}
+		if e := s.Downloads.SetConcurrency(c.TaskConcurrency, c.PageConcurrency); e != nil {
+			fail(w, e)
+			return
+		}
 		if e := s.Downloads.SetRoot(c.DownloadDir); e != nil {
+			_ = s.Downloads.SetConcurrency(old.TaskConcurrency, old.PageConcurrency)
 			fail(w, e)
 			return
 		}
-		if e := download.AtomicJSON(filepath.Join(s.StateDir, "config.json"), c); e != nil {
-			_ = s.Downloads.SetRoot(old)
+		saved := s.currentConfig()
+		if e := download.AtomicJSON(filepath.Join(s.StateDir, "config.json"), saved); e != nil {
+			_ = s.Downloads.SetRoot(old.DownloadDir)
+			_ = s.Downloads.SetConcurrency(old.TaskConcurrency, old.PageConcurrency)
 			fail(w, e)
 			return
 		}
-		jsonOut(w, c)
+		jsonOut(w, saved)
 	})
 	mux.HandleFunc("GET /api/v1/events", func(w http.ResponseWriter, r *http.Request) {
 		f, ok := w.(http.Flusher)
