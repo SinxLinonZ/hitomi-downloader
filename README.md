@@ -7,7 +7,7 @@ Go CLI 启动本地 HTTP GUI，前端使用 React、TypeScript 和 Mantine。所
 需要 Go 1.23+、Node.js 20.19+ 或 22.12+。
 
 ```sh
-cd src/web
+cd web
 npm ci
 npm run build
 cd ..

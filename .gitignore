@@ -1,7 +1,6 @@
 /web/node_modules/
 /web/dist/*
-!/web/dist/index.html
-!/web/dist/reader.html
+!/web/dist/.gitkeep
 /data/
 /downloads/
 /hitomi-downloader
