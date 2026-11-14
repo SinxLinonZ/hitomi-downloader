@@ -81,6 +81,7 @@ type Manager struct {
 	root    string
 	state   string
 	slots   chan struct{}
+	mslots  chan struct{}
 	wg      sync.WaitGroup
 	closing bool
 	library libraryIndex
@@ -127,7 +128,7 @@ func New(client *hitomi.Client, root, state string) (*Manager, error) {
 	if e = os.MkdirAll(filepath.Join(state, "tasks"), 0700); e != nil {
 		return nil, e
 	}
-	m := &Manager{tasks: map[int]*Task{}, cancel: map[int]context.CancelFunc{}, settled: map[int]chan struct{}{}, client: client, root: root, state: state, slots: make(chan struct{}, 2)}
+	m := &Manager{tasks: map[int]*Task{}, cancel: map[int]context.CancelFunc{}, settled: map[int]chan struct{}{}, client: client, root: root, state: state, slots: make(chan struct{}, 2), mslots: make(chan struct{}, migrateSlots)}
 	files, e := os.ReadDir(filepath.Join(state, "tasks"))
 	if e != nil {
 		return nil, e
@@ -320,9 +321,15 @@ func (m *Manager) update(id int, fn func(*Task)) error {
 func (m *Manager) run(ctx context.Context, id int) {
 	defer m.wg.Done()
 	defer func() { m.mu.Lock(); delete(m.cancel, id); close(m.settled[id]); delete(m.settled, id); m.mu.Unlock() }()
+	m.mu.Lock()
+	slots := m.slots
+	if m.tasks[id].Operation == "migrate" {
+		slots = m.mslots
+	}
+	m.mu.Unlock()
 	select {
-	case m.slots <- struct{}{}:
-		defer func() { <-m.slots }()
+	case slots <- struct{}{}:
+		defer func() { <-slots }()
 	case <-ctx.Done():
 		return
 	}
@@ -521,7 +528,18 @@ func (m *Manager) process(ctx context.Context, id int) error {
 				mu.Unlock()
 				valid := false
 				if exists && p.SourceHash == f.Hash {
-					valid = verify(dir, p) == nil
+					if checked, e := verifyPage(dir, p); e == nil {
+						valid = true
+						// 移行直後のページは、初回の検証で SHA-256 基線を確定して保存する。
+						if checked.SHA256 != p.SHA256 {
+							mu.Lock()
+							pages[i] = checked
+							if e := save(); e != nil {
+								persistErr = e
+							}
+							mu.Unlock()
+						}
+					}
 				}
 				if !valid {
 					p, e := m.fetch(ctx, dir, i, f)
@@ -585,31 +603,77 @@ send:
 	m.refreshIndex(final)
 	return m.update(id, func(t *Task) { t.Directory = final })
 }
+
+type byteCounter struct{ n int64 }
+
+func (c *byteCounter) Write(b []byte) (int, error) { c.n += int64(len(b)); return len(b), nil }
+
 func verify(dir string, p Page) error {
-	if filepath.Base(p.Name) != p.Name || p.Bytes <= 0 || len(p.SHA256) != 64 {
-		return fmt.Errorf("无效页面记录")
+	_, e := verifyPage(dir, p)
+	return e
+}
+
+// 基線（SHA-256）がある場合は照合し、ない場合（移行直後）は署名・デコードで検査して基線を確定する。
+func verifyPage(dir string, p Page) (Page, error) {
+	if filepath.Base(p.Name) != p.Name || p.Bytes <= 0 || (p.SHA256 != "" && len(p.SHA256) != 64) {
+		return p, fmt.Errorf("无效页面记录")
 	}
 	info, e := os.Lstat(filepath.Join(dir, p.Name))
 	if e != nil {
-		return e
+		return p, e
 	}
 	if !info.Mode().IsRegular() {
-		return fmt.Errorf("页面不是普通文件")
+		return p, fmt.Errorf("页面不是普通文件")
+	}
+	if info.Size() != p.Bytes {
+		return p, fmt.Errorf("图片校验不一致")
 	}
 	f, e := os.Open(filepath.Join(dir, p.Name))
 	if e != nil {
-		return e
+		return p, e
 	}
 	defer f.Close()
 	h := sha256.New()
-	n, e := io.Copy(h, f)
-	if e != nil {
-		return e
+	// デコーダがバッファに先読みした分も含め、実際に読み込んだ総バイト数を数える。
+	counter := &byteCounter{}
+	var r io.Reader = io.TeeReader(f, io.MultiWriter(h, counter))
+	if p.SHA256 == "" {
+		ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(p.Name), "."))
+		head := make([]byte, 512)
+		n, e := io.ReadFull(f, head)
+		if e != nil && e != io.EOF && e != io.ErrUnexpectedEOF {
+			return p, e
+		}
+		head = head[:n]
+		if !imageSignature(head, ext) {
+			return p, fmt.Errorf("图片签名与格式不符")
+		}
+		if _, e = f.Seek(0, 0); e != nil {
+			return p, e
+		}
+		if ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "gif" {
+			if _, _, e = image.Decode(r); e != nil {
+				return p, fmt.Errorf("图片解码校验失败：%w", e)
+			}
+		}
 	}
-	if n != p.Bytes || hex.EncodeToString(h.Sum(nil)) != p.SHA256 {
-		return fmt.Errorf("图片校验不一致")
+	if _, e = io.Copy(io.Discard, r); e != nil {
+		return p, e
 	}
-	return nil
+	n := counter.n
+	sum := hex.EncodeToString(h.Sum(nil))
+	if p.SHA256 == "" {
+		// 解码で先頭側を読んだ分も Tee 経由でハッシュに入っているため、全体のハッシュになる。
+		if n != p.Bytes {
+			return p, fmt.Errorf("图片校验不一致")
+		}
+		p.SHA256 = sum
+		return p, nil
+	}
+	if n != p.Bytes || sum != p.SHA256 {
+		return p, fmt.Errorf("图片校验不一致")
+	}
+	return p, nil
 }
 func imageSignature(b []byte, ext string) bool {
 	switch ext {

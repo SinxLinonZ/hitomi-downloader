@@ -100,6 +100,9 @@ func TestMigratePreservesImagesAndCreatesOfflineManifest(t *testing.T) {
 		t.Fatalf("%+v %+v %v", meta, g, e)
 	}
 	for _, p := range meta.Pages {
+		if p.SHA256 != "" {
+			t.Fatal("migration should defer the checksum baseline")
+		}
 		if e := verify(dir, p); e != nil {
 			t.Fatal(e)
 		}
@@ -116,6 +119,24 @@ func TestMigratePreservesImagesAndCreatesOfflineManifest(t *testing.T) {
 	}
 	if task = await(t, m, 123); task.State != "completed" {
 		t.Fatalf("offline verification failed: %+v", task)
+	}
+	// 初回の検証で基線が確定し、以降は内容の変化を検出できる。
+	meta, _, e = readMetadata(dir)
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, p := range meta.Pages {
+		if len(p.SHA256) != 64 {
+			t.Fatalf("baseline not recorded: %+v", p)
+		}
+	}
+	if e = verify(dir, meta.Pages[0]); e != nil {
+		t.Fatal(e)
+	}
+	bad := meta.Pages[0]
+	bad.SHA256 = strings.Repeat("0", 64)
+	if e = verify(dir, bad); e == nil {
+		t.Fatal("changed checksum accepted")
 	}
 }
 

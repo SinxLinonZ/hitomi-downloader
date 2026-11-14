@@ -3,9 +3,7 @@ package download
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,9 +12,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"hitomi-downloader/internal/hitomi"
+)
+
+// 移行はローカル I/O のみなので、ネットワーク用のスロットとは別に多めに並列化する。
+const (
+	migrateWorkers = 8
+	migrateSlots   = 4
 )
 
 type contextReader struct {
@@ -68,6 +73,8 @@ func normalizeLegacy(raw json.RawMessage) (json.RawMessage, error) {
 	return json.Marshal(fields)
 }
 
+// 移行時は画像の中身を最後まで読まない。サイズ・先頭シグネチャ・画像ヘッダーだけを確認し、
+// SHA-256 の基線は最初の「验证并补全」で確定する（verifyPage を参照）。
 func inspectPage(ctx context.Context, dir, name string, index int, source hitomi.File) (Page, error) {
 	var p Page
 	if filepath.Base(name) != name {
@@ -111,27 +118,7 @@ func inspectPage(ctx context.Context, dir, name string, index int, source hitomi
 			return p, fmt.Errorf("图片尺寸无效或超过限制")
 		}
 	}
-	if _, e = f.Seek(0, 0); e != nil {
-		return p, e
-	}
-	hash := sha256.New()
-	reader := contextReader{ctx, io.TeeReader(f, hash)}
-	if ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "gif" {
-		if _, _, e = image.Decode(reader); e != nil {
-			return p, e
-		}
-	}
-	if _, e = io.Copy(io.Discard, reader); e != nil {
-		return p, e
-	}
-	after, e := f.Stat()
-	if e != nil {
-		return p, e
-	}
-	if after.Size() != info.Size() || !after.ModTime().Equal(info.ModTime()) {
-		return p, fmt.Errorf("迁移期间图片发生变化")
-	}
-	return Page{Index: index, Name: name, SourceHash: source.Hash, Format: ext, Bytes: info.Size(), SHA256: hex.EncodeToString(hash.Sum(nil))}, nil
+	return Page{Index: index, Name: name, SourceHash: source.Hash, Format: ext, Bytes: info.Size()}, nil
 }
 
 func backupLegacy(dir string, original []byte) error {
@@ -225,37 +212,86 @@ func (m *Manager) migrate(ctx context.Context, task Task) error {
 			candidates[base] = append(candidates[base], entry.Name())
 		}
 	}
+	total := len(g.Files)
+	results := make([]Page, total)
+	problems := make([]error, total)
+	var mu sync.Mutex
+	var persistErr error
+	done := 0
+	pending := map[int]string{}
+	// 呼び出し元が mu を保持する。進捗の保存は一定ページ数ごとにまとめる。
+	flush := func() {
+		errs := pending
+		pending = map[int]string{}
+		d := done
+		if e := m.update(task.ID, func(t *Task) {
+			t.Done = d
+			for k, v := range errs {
+				t.Errors[k] = v
+			}
+		}); e != nil && persistErr == nil {
+			persistErr = e
+		}
+	}
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	for w := 0; w < migrateWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				names := candidates[fmt.Sprintf("%04d", i+1)]
+				var page Page
+				var problem error
+				if len(names) == 0 {
+					problem = fmt.Errorf("缺少图片")
+				} else if len(names) > 1 {
+					problem = fmt.Errorf("同一页存在多个格式，请整理后再补全：%s", strings.Join(names, ", "))
+				} else {
+					page, problem = inspectPage(ctx, dir, names[0], i, g.Files[i])
+				}
+				if ctx.Err() != nil {
+					return
+				}
+				mu.Lock()
+				results[i], problems[i] = page, problem
+				done++
+				if problem != nil {
+					pending[i+1] = problem.Error()
+				}
+				if done%25 == 0 || done == total {
+					flush()
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+send:
+	for i := 0; i < total; i++ {
+		select {
+		case jobs <- i:
+		case <-ctx.Done():
+			break send
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	if e := ctx.Err(); e != nil {
+		return e
+	}
+	if persistErr != nil {
+		return persistErr
+	}
 	pages := []Page{}
 	issues := 0
-	for i, file := range g.Files {
-		if e := ctx.Err(); e != nil {
-			return e
-		}
-		names := candidates[fmt.Sprintf("%04d", i+1)]
-		var page Page
-		var problem error
-		if len(names) == 0 {
-			problem = fmt.Errorf("缺少图片")
-		} else if len(names) > 1 {
-			problem = fmt.Errorf("同一页存在多个格式，请整理后再补全：%s", strings.Join(names, ", "))
-		} else {
-			page, problem = inspectPage(ctx, dir, names[0], i, file)
-		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if problem == nil {
-			pages = append(pages, page)
+	for i := range results {
+		if problems[i] == nil {
+			pages = append(pages, results[i])
 		} else {
 			issues++
-		}
-		if e = m.update(task.ID, func(t *Task) {
-			t.Done++
-			if problem != nil {
-				t.Errors[i+1] = problem.Error()
-			}
-		}); e != nil {
-			return e
 		}
 	}
 	if e := ctx.Err(); e != nil {
@@ -271,7 +307,7 @@ func (m *Manager) migrate(ctx context.Context, task Task) error {
 	if e = backupLegacy(dir, original); e != nil {
 		return e
 	}
-	meta = Metadata{Schema: 1, Gallery: raw, Pages: pages, UpdatedAt: time.Now(), QualityPolicy: "migrated-existing-files; local integrity baseline, not original-quality verification"}
+	meta = Metadata{Schema: 1, Gallery: raw, Pages: pages, UpdatedAt: time.Now(), QualityPolicy: "migrated-existing-files; checksum baseline is recorded on first verification, not original-quality verification"}
 	if e = AtomicJSON(filepath.Join(dir, "metadata.json"), meta); e != nil {
 		return e
 	}
