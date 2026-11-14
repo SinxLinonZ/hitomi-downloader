@@ -1,0 +1,112 @@
+:root {
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+body {
+  background: #14171c;
+  color: #e2e7ee;
+}
+.mantine-AppShell-header {
+  background: #1a1e25;
+  border-bottom: 1px solid #303641;
+}
+.page-heading {
+  padding: 4px 0 26px;
+}
+.page-heading h1 {
+  font-size: 26px;
+  letter-spacing: -0.6px;
+}
+.brand-local {
+  color: var(--mantine-color-teal-4);
+}
+.mantine-AppShell-navbar {
+  background: #1a1e25;
+  border-right: 1px solid #303641;
+}
+.workspace-nav {
+  border-radius: 8px;
+  min-height: 44px;
+}
+.directory-summary {
+  background: #242a33;
+}
+.workspace-disabled {
+  opacity: 0.55;
+}
+.mantine-Card-root,
+.mantine-Paper-root {
+  border-color: #303641;
+  background: #1d222a;
+}
+.gallery-title {
+  cursor: pointer;
+  line-height: 1.5;
+}
+.gallery-title:hover {
+  color: var(--mantine-color-teal-4);
+}
+.cover {
+  background: #171b21;
+  flex-shrink: 0;
+}
+.empty {
+  background: transparent;
+  border: 1px dashed #3a4350;
+}
+.path {
+  overflow-wrap: anywhere;
+}
+.mantine-Progress-root {
+  background: #303641;
+}
+.mantine-AppShell-main {
+  background: #14171c;
+}
+.downloaded-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.downloaded-info {
+  flex: 1;
+  min-width: 0;
+}
+.downloaded-actions {
+  flex-shrink: 0;
+  align-self: center;
+}
+.downloaded-selection {
+  padding: 4px 0;
+}
+.scan-warnings {
+  font-size: 13px;
+  color: var(--mantine-color-orange-4);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .downloaded-row {
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .downloaded-row .cover {
+    width: 66px !important;
+    height: 94px !important;
+  }
+  .downloaded-actions {
+    margin-left: auto;
+  }
+  .downloaded-info {
+    flex-basis: calc(100% - 120px);
+  }
+}
+@media (max-width: 600px) {
+  .mantine-AppShell-main {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .page-heading {
+    padding-top: 8px;
+  }
+}

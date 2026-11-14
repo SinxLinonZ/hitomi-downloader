@@ -1,0 +1,9 @@
+/web/node_modules/
+/web/dist/*
+!/web/dist/index.html
+/data/
+/downloads/
+/hitomi-downloader
+/web/*.tsbuildinfo
+/web/test-results/
+/web/playwright-report/
