@@ -6,7 +6,28 @@ Go 製の CLI がローカルの HTTP GUI（React、TypeScript、Mantine）を�
 
 Linux / Windows / macOS 用のビルド済みバイナリは [Releases](https://github.com/SinxLinonZ/hitomi-downloader/releases) にあります。
 
-> 注：GUI の文言は現時点では簡体字中国語です。このドキュメントのボタン名やメニュー名は説明のために日本語に訳しています。
+## 免責事項
+
+このプロジェクトは**学習・研究を目的としたもの**です（たとえば Go + React アプリの作り方や、Web プロトコルの仕組みを学ぶためなど）。コンテンツの保存や配布は一切行いません。
+
+**違法コピー（海賊版）の利用を推奨・支援するものではありません。**作者や出版社の権利、およびアクセスするサイトの利用規約を尊重し、気に入った作品は正規の手段で応援してください。このソフトウェアの使い方やダウンロードしたコンテンツについての責任は利用者自身にあり、作者はいかなる利用・誤用についても責任を負いません。
+
+## スクリーンショット
+
+<p align="center">
+  <img src="docs/screenshots/ja-search.png" width="49%" alt="検索結果">
+  <img src="docs/screenshots/ja-detail.png" width="49%" alt="作品の詳細と関連作品">
+</p>
+<p align="center">
+  <img src="docs/screenshots/ja-queue.png" width="49%" alt="ダウンロードキュー">
+  <img src="docs/screenshots/ja-downloaded.png" width="49%" alt="ダウンロード済み">
+</p>
+<p align="center">
+  <img src="docs/screenshots/ja-reader-list.png" width="24%" alt="スマートフォン閲覧：一覧">
+  <img src="docs/screenshots/ja-reader-page.png" width="24%" alt="スマートフォン閲覧：閲覧中">
+</p>
+
+上段は検索・作品詳細・ダウンロードキュー・ダウンロード済み、下段はスマートフォン向け閲覧ページです。表示している作品はすべて、このドキュメントのために用意した架空のサンプルです。
 
 ## ビルドと実行
 
@@ -151,6 +172,8 @@ npm test
 Playwright のテストは実際の Go バイナリを起動し、ディレクトリの走査、オフライン検証、検索の部分的な失敗、設定の永続化を対象にしているので、先に上記のビルドを実行してください（バイナリにフロントエンドが埋め込まれるため、フロントエンドを変更したらバイナリも再ビルドします）。既定では macOS の Google Chrome を使い、他の OS では `CHROME_PATH` で Chromium の実行ファイルを指定します。テストは一時的なフィクスチャとモックした検索レスポンスを使うので、Hitomi がオンラインである必要はありません。既定の `/tmp` パスが禁止された制限環境では `TMPDIR=/private/tmp` を設定してください。localhost のポートへのバインドが禁止されている場合、ブラウザのテストは起動できませんが、Go の HTTP ハンドラーのテストは実行できます。
 
 フロントエンドを開発するときは、まず `--port 8080` で Go を起動し、ブラウザで CLI のリンクを開いてセッションを初期化してから、`npm run dev` を実行して同じ hostname の Vite のページにアクセスします。Vite は既定で `/api` を `http://127.0.0.1:8080` に転送します。`HITOMI_BACKEND` で変更できます。Cookie の hostname を揃えるため、ブラウザでは常に `127.0.0.1` を使ってください。
+
+`docs/screenshots/` のスクリーンショットは、架空のモックデータから `npm run screenshots` で生成します（先に `npm run build` を実行）。
 
 動的なホスト名と `gg.js` のルーティング規則は、[lanyeeee/hitomi-downloader](https://github.com/lanyeeee/hitomi-downloader) によるプロトコルの実装を参考にしています。プロトコルが変わった場合は明確な解析エラーが報告されるので、`internal/hitomi` のアダプターを更新する必要があります。
 

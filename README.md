@@ -6,7 +6,28 @@ A Go CLI that starts a local HTTP GUI (React, TypeScript and Mantine). The front
 
 Prebuilt Linux / Windows / macOS binaries are available on the [Releases](https://github.com/SinxLinonZ/hitomi-downloader/releases) page.
 
-> Note: the GUI text is currently in Simplified Chinese. Button and menu names in this document are translated to describe them.
+## Disclaimer
+
+This project is provided **for learning and research purposes only** (for example, studying a Go + React application and how a web protocol works). It does not host or distribute any content.
+
+**It is not intended to encourage or support piracy.** Please respect the rights of creators and publishers and the terms of service of the sites you access, and support the works you like through official channels. You are solely responsible for how you use this software and for the content you download; the authors accept no liability for any use or misuse.
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/en-search.png" width="49%" alt="Search results">
+  <img src="docs/screenshots/en-detail.png" width="49%" alt="Work details with related works">
+</p>
+<p align="center">
+  <img src="docs/screenshots/en-queue.png" width="49%" alt="Download queue">
+  <img src="docs/screenshots/en-downloaded.png" width="49%" alt="Downloaded works">
+</p>
+<p align="center">
+  <img src="docs/screenshots/en-reader-list.png" width="24%" alt="Mobile reader: list">
+  <img src="docs/screenshots/en-reader-page.png" width="24%" alt="Mobile reader: reading">
+</p>
+
+Search, download queue, downloaded works (top, left to right), and the mobile reader page (bottom). All works shown are fictional samples generated for this document.
 
 ## Build and run
 
@@ -151,6 +172,8 @@ npm test
 The Playwright tests start the real Go binary and cover directory scanning, offline verification, partial search failures and settings persistence, so run the build above first (the binary embeds the frontend, so rebuild the binary after changing the frontend). Google Chrome on macOS is used by default; set `CHROME_PATH` to point at a Chromium executable on other systems. The tests use temporary fixtures and mocked search responses and do not depend on Hitomi being online. In restricted environments that forbid the default `/tmp` path, set `TMPDIR=/private/tmp`; if binding a localhost port is forbidden, the browser tests cannot start, but the Go HTTP handler tests still run.
 
 When developing the frontend, first start Go with `--port 8080` and open the CLI link in the browser to initialise the session, then run `npm run dev` and visit the Vite page on the same hostname. Vite proxies `/api` to `http://127.0.0.1:8080` by default; change it with `HITOMI_BACKEND`. Always use `127.0.0.1` in the browser so that the cookie hostname stays the same.
+
+The screenshots in `docs/screenshots/` are generated from mocked, fictional data with `npm run screenshots` (run `npm run build` first).
 
 The dynamic host names and the `gg.js` routing rules follow the protocol implementation of [lanyeeee/hitomi-downloader](https://github.com/lanyeeee/hitomi-downloader); when the protocol changes, a clear parse error is reported and the `internal/hitomi` adapter needs updating.
 

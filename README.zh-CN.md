@@ -6,6 +6,29 @@ Go CLI 启动本地 HTTP GUI，前端使用 React、TypeScript 和 Mantine。前
 
 预编译的 Linux / Windows / macOS 二进制见 [Releases](https://github.com/SinxLinonZ/hitomi-downloader/releases)。
 
+## 免责声明
+
+本项目**仅供学习和研究**之用（例如学习 Go + React 应用的实现和网络协议的工作方式），本身不托管也不分发任何内容。
+
+**本项目不鼓励也不支持盗版。**请尊重创作者和出版方的权利，遵守所访问网站的服务条款，并通过正规渠道支持自己喜欢的作品。使用本软件的方式以及下载的内容均由使用者自行负责，作者对任何使用或滥用不承担责任。
+
+## 截图
+
+<p align="center">
+  <img src="docs/screenshots/zh-CN-search.png" width="49%" alt="搜索结果">
+  <img src="docs/screenshots/zh-CN-detail.png" width="49%" alt="作品详情与相关作品">
+</p>
+<p align="center">
+  <img src="docs/screenshots/zh-CN-queue.png" width="49%" alt="下载队列">
+  <img src="docs/screenshots/zh-CN-downloaded.png" width="49%" alt="已下载">
+</p>
+<p align="center">
+  <img src="docs/screenshots/zh-CN-reader-list.png" width="24%" alt="手机阅读页：列表">
+  <img src="docs/screenshots/zh-CN-reader-page.png" width="24%" alt="手机阅读页：阅读">
+</p>
+
+依次为搜索、作品详情、下载队列、已下载（上），以及手机阅读页（下）。截图中的作品均为本文档专门生成的虚构示例。
+
 ## 构建与运行
 
 需要 Go 1.23+、Node.js 20.19+ 或 22.12+。
@@ -149,6 +172,8 @@ npm test
 Playwright tests 启动真实 Go binary，覆盖目录扫描、离线校验、搜索局部失败和设置持久化，因此先执行上述构建。默认使用 macOS Chrome，可通过 `CHROME_PATH` 指定其他系统的 Chromium executable。测试使用临时 fixture 和 mock 搜索响应，不依赖 Hitomi 在线。受限环境如禁止 `/tmp` 默认路径，可设置 `TMPDIR=/private/tmp`；如果禁止绑定 localhost 端口，则浏览器测试无法启动，Go HTTP handlers 的测试仍可运行。
 
 开发前端时，先通过 `--port 8080` 启动 Go 并在浏览器中打开 CLI 链接完成 session 初始化，再运行 `npm run dev` 并访问同一 hostname 的 Vite 页面。Vite 默认将 `/api` 转发至 `http://127.0.0.1:8080`，可通过 `HITOMI_BACKEND` 修改。浏览器中始终使用 `127.0.0.1`，保持 cookie 的 hostname 一致。
+
+`docs/screenshots/` 中的截图由 `npm run screenshots` 用虚构的 mock 数据生成（先执行 `npm run build`）。
 
 动态域名和 `gg.js` 路由规则参照 [lanyeeee/hitomi-downloader](https://github.com/lanyeeee/hitomi-downloader) 的协议实现；协议发生变化时会给出明确的解析错误，需要更新 `internal/hitomi` 适配层。
 
