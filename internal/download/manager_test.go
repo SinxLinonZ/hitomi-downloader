@@ -8,6 +8,7 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -308,5 +309,30 @@ func TestCloseCancelsDownloadAndPersistsPausedState(t *testing.T) {
 	}
 	if e = m.Start(42, "", "download"); e == nil {
 		t.Fatal("accepted task after Close")
+	}
+}
+
+// 原图用のホストが存在しない（実際の Hitomi と同じ）場合でも、派生形式に回退して取得できる。
+func TestMissingOriginalHostFallsBackWithoutRetryDelay(t *testing.T) {
+	m, _, _ := fixture(t)
+	old := m.client.HTTP.Transport
+	m.client.HTTP.Transport = rt(func(r *http.Request) (*http.Response, error) {
+		host := r.URL.Hostname()
+		if strings.HasPrefix(host, "1.") || strings.HasPrefix(host, "2.") || strings.HasPrefix(host, "j") {
+			return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
+		}
+		if strings.HasSuffix(r.URL.Path, ".avif") {
+			b := []byte("\x00\x00\x00\x18ftypavif\x00\x00\x00\x00avifmif1")
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(bytes.NewReader(b)), ContentLength: int64(len(b)), Request: r}, nil
+		}
+		return old.RoundTrip(r)
+	})
+	start := time.Now()
+	p, e := m.fetch(context.Background(), t.TempDir(), 0, hitomi.File{Name: "source.png", Hash: strings.Repeat("a", 64), HasJxl: 1, HasAvif: 1})
+	if e != nil || p.Format != "avif" || !strings.Contains(p.Fallback, "域名无法解析") {
+		t.Fatalf("%+v %v", p, e)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("DNS failure was retried with backoff")
 	}
 }

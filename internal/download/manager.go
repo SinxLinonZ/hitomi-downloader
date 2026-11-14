@@ -774,6 +774,11 @@ func (m *Manager) fetch(ctx context.Context, dir string, index int, f hitomi.Fil
 			resp, e := m.client.Image(ctx, u)
 			if e != nil {
 				var he *hitomi.Error
+				// 形式ごとのホストが存在しない場合も、その形式は提供されていないとみなして次へ回退する。
+				if errors.As(e, &he) && he.Code == "UPSTREAM_DNS" {
+					reason = fmt.Sprintf("%s 不可用 (域名无法解析)", ext)
+					break
+				}
 				if errors.As(e, &he) && (he.Status == 404 || he.Status == 403) {
 					if refresh == 0 {
 						continue

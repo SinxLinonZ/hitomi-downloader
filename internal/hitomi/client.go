@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand/v2"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -162,6 +163,11 @@ func (c *Client) request(ctx context.Context, u, ran string) (*http.Response, er
 		}
 		if status == 404 {
 			code = "NOT_FOUND"
+		}
+		// ドメイン自体が存在しない場合は再試行しても無駄なので、呼び出し側が別形式へ回退できるよう即座に返す。
+		var dns *net.DNSError
+		if e != nil && errors.As(e, &dns) && dns.IsNotFound {
+			code, retry = "UPSTREAM_DNS", false
 		}
 		failure := &Error{code, fmt.Sprintf("上游请求失败（HTTP %d，尝试 %d/%d）", status, attempt+1, attempts), retry, status}
 		if e != nil {
