@@ -55,6 +55,14 @@ function toOpened(entry: Entry): Opened {
 const MIGRATE_HINT =
   "旧格式不会自动改写。迁移会备份原 metadata，读取现有图片并建立校验记录；缺失页面可在迁移后补全。";
 
+// 一覧用の短い日付（ローカル時刻）。
+const formatDay = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
 export function DownloadedPane({
   directory,
   tasks,
@@ -70,6 +78,8 @@ export function DownloadedPane({
   const [query, setQuery] = useState("");
   const [q] = useDebouncedValue(query, 250);
   const [kind, setKind] = useState<string | null>("all");
+  // 並び順：updated＝メタデータ更新が新しい順、created＝ダウンロード（ディレクトリ作成）が新しい／古い順。
+  const [sort, setSort] = useState<string | null>("updated");
   const [tagFilters, setTagFilters] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Map<string, Entry>>(new Map());
@@ -100,6 +110,7 @@ export function DownloadedPane({
           pageSize: String(PAGE_SIZE),
           q,
           kind: kind || "all",
+          sort: sort || "updated",
         });
         for (const tag of tagFilters) params.append("tag", tag);
         const result = await api<LibraryPage>(
@@ -135,7 +146,7 @@ export function DownloadedPane({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [directory, page, q, kind, tagFilters, revision, taskRevision, disabled]);
+  }, [directory, page, q, kind, sort, tagFilters, revision, taskRevision, disabled]);
 
   const entries = data?.entries || [];
   const scanning = data?.scan.state === "running";
@@ -360,6 +371,21 @@ export function DownloadedPane({
               { value: "legacy", label: "待迁移" },
               { value: "native", label: "已使用新 metadata" },
               { value: "upstream", label: "上游有更新 / 已删除" },
+            ]}
+            w={150}
+          />
+          <Select
+            aria-label="排序方式"
+            value={sort}
+            onChange={(v) => {
+              setSort(v);
+              setPage(1);
+            }}
+            allowDeselect={false}
+            data={[
+              { value: "updated", label: "最近更新" },
+              { value: "created", label: "下载时间：新→旧" },
+              { value: "created-asc", label: "下载时间：旧→新" },
             ]}
             w={150}
           />
@@ -609,6 +635,7 @@ export function DownloadedPane({
             entry.type,
             `${entry.pages} 页`,
             entry.formats.join(" / ").toUpperCase(),
+            entry.createdAt ? `下载于 ${formatDay(entry.createdAt)}` : "",
           ].filter(Boolean);
           return (
             <Paper

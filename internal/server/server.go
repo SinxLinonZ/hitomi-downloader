@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -81,6 +82,10 @@ func fail(w http.ResponseWriter, e error) {
 	}
 	if errors.Is(e, context.Canceled) {
 		status = 499
+	}
+	var dup *download.AlreadyDownloadedError
+	if errors.As(e, &dup) {
+		status, code = http.StatusConflict, "ALREADY_DOWNLOADED"
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -166,12 +171,27 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/library", func(w http.ResponseWriter, r *http.Request) {
 		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 		size, _ := strconv.Atoi(r.URL.Query().Get("pageSize"))
-		result, e := s.Downloads.Library(page, size, r.URL.Query().Get("q"), r.URL.Query().Get("kind"), r.URL.Query()["tag"]...)
+		result, e := s.Downloads.LibrarySorted(page, size, r.URL.Query().Get("q"), r.URL.Query().Get("kind"), r.URL.Query().Get("sort"), r.URL.Query()["tag"]...)
 		if e != nil {
 			fail(w, e)
 			return
 		}
 		jsonOut(w, result)
+	})
+	// 検索結果などの作品がすでにダウンロード済みかを、ID の一覧でまとめて確認する。
+	mux.HandleFunc("GET /api/v1/library/downloaded", func(w http.ResponseWriter, r *http.Request) {
+		ids := []int{}
+		for _, raw := range r.URL.Query()["id"] {
+			if id, e := strconv.Atoi(raw); e == nil && id > 0 && len(ids) < 200 {
+				ids = append(ids, id)
+			}
+		}
+		found := []int{}
+		for id := range s.Downloads.DownloadedDirs(ids) {
+			found = append(found, id)
+		}
+		sort.Ints(found)
+		jsonOut(w, map[string][]int{"ids": found})
 	})
 	mux.HandleFunc("POST /api/v1/library/scan", func(w http.ResponseWriter, r *http.Request) {
 		if e := s.Downloads.StartScan(true); e != nil {

@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"hitomi-downloader/internal/hitomi"
 )
@@ -125,6 +126,19 @@ func entryFrom(dir string, meta Metadata, g hitomi.Gallery) Entry {
 	return e
 }
 
+// 作品ディレクトリの作成時刻をダウンロード時刻として使う。metadata.json は検証のたびに
+// 書き換わるため当てにならない。取得できない環境ではディレクトリ、次いで fallback の時刻で代用する。
+func dirCreatedAt(dir string, fallback time.Time) time.Time {
+	info, e := os.Lstat(dir)
+	if e != nil {
+		return fallback
+	}
+	if t := birthTime(info); !t.IsZero() {
+		return t
+	}
+	return info.ModTime()
+}
+
 // 作品ディレクトリでは metadata を先に探し、画像ファイルの全列挙を避ける。
 func walkLibrary(ctx context.Context, root string, emit func(Entry), progress func(string, string)) error {
 	var walk func(string, int) error
@@ -155,6 +169,7 @@ func walkLibrary(ctx context.Context, root string, emit func(Entry), progress fu
 			if entry.UpdatedAt.IsZero() {
 				entry.UpdatedAt = info.ModTime()
 			}
+			entry.CreatedAt = dirCreatedAt(dir, entry.UpdatedAt)
 			emit(entry)
 			return nil
 		}
@@ -271,6 +286,11 @@ func (m *Manager) CancelScan() {
 	}
 }
 func (m *Manager) Library(page, size int, q, kind string, tags ...string) (LibraryPage, error) {
+	return m.LibrarySorted(page, size, q, kind, "", tags...)
+}
+
+// sortBy: "created"（新しいダウンロード順）/ "created-asc"（古い順）/ それ以外は更新日時の新しい順。
+func (m *Manager) LibrarySorted(page, size int, q, kind, sortBy string, tags ...string) (LibraryPage, error) {
 	if e := m.StartScan(false); e != nil {
 		return LibraryPage{}, e
 	}
@@ -314,7 +334,14 @@ func (m *Manager) Library(page, size int, q, kind string, tags ...string) (Libra
 		filtered = append(filtered, entry)
 	}
 	out.Tags = tagFacets(counts)
-	sort.SliceStable(filtered, func(i, j int) bool { return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt) })
+	switch sortBy {
+	case "created":
+		sort.SliceStable(filtered, func(i, j int) bool { return filtered[i].CreatedAt.After(filtered[j].CreatedAt) })
+	case "created-asc":
+		sort.SliceStable(filtered, func(i, j int) bool { return filtered[i].CreatedAt.Before(filtered[j].CreatedAt) })
+	default:
+		sort.SliceStable(filtered, func(i, j int) bool { return filtered[i].UpdatedAt.After(filtered[j].UpdatedAt) })
+	}
 	out.Total = len(filtered)
 	start := (page - 1) * size
 	if start >= 0 && start < len(filtered) {
@@ -328,6 +355,7 @@ func (m *Manager) refreshIndex(dir string) {
 		return
 	}
 	entry := entryFrom(dir, meta, g)
+	entry.CreatedAt = dirCreatedAt(dir, entry.UpdatedAt)
 	m.library.mu.Lock()
 	defer m.library.mu.Unlock()
 	root := m.library.status.Root
@@ -381,4 +409,59 @@ func (m *Manager) LocalCover(dir string) (string, error) {
 		}
 	}
 	return "", os.ErrNotExist
+}
+
+// AlreadyDownloadedError は、作品がすでに下載目录にあるため新規ダウンロードできないことを表す。
+type AlreadyDownloadedError struct {
+	ID        int
+	Directory string
+}
+
+func (e *AlreadyDownloadedError) Error() string {
+	return fmt.Sprintf("该作品已在下载目录中（%s），如需补全或检查请使用“验证”", filepath.Base(e.Directory))
+}
+
+// DownloadedDirs は ids のうち、走査済みの本地库にあるものを ID → ディレクトリで返す。
+// 走査の途中でも「見つかったものは確実に存在する」ので、陽性だけを返し、陰性は判断しない。
+func (m *Manager) DownloadedDirs(ids []int) map[int]string {
+	if len(ids) == 0 {
+		return map[int]string{}
+	}
+	_ = m.StartScan(false)
+	return existingDirs(m.indexedDirs(ids, m.Root()))
+}
+
+// indexedDirs は索引から ID に対応するディレクトリを引く（存在確認はしない）。
+// 呼び出し元が m.mu を保持していてもよい（library.mu は m.mu の内側）。
+func (m *Manager) indexedDirs(ids []int, root string) map[int]string {
+	want := make(map[int]bool, len(ids))
+	for _, id := range ids {
+		want[id] = true
+	}
+	dirs := map[int]string{}
+	m.library.mu.Lock()
+	defer m.library.mu.Unlock()
+	if m.library.status.Root != root {
+		return dirs
+	}
+	for _, entry := range m.library.entries {
+		if !want[entry.ID] {
+			continue
+		}
+		if _, ok := dirs[entry.ID]; !ok || !entry.Legacy {
+			dirs[entry.ID] = entry.Directory
+		}
+	}
+	return dirs
+}
+
+// 外部で削除されたディレクトリは索引が古いままなので、実在するものだけ残す。
+func existingDirs(dirs map[int]string) map[int]string {
+	out := map[int]string{}
+	for id, dir := range dirs {
+		if info, e := os.Stat(dir); e == nil && info.IsDir() {
+			out[id] = dir
+		}
+	}
+	return out
 }

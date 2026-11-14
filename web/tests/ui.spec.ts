@@ -556,3 +556,137 @@ test("上游有更新的作品显示提示，并可应用上游更新", async ({
   expect(updates).toEqual([[dir]]);
   expect(errors).toEqual([]);
 });
+
+test("已下载作品的下载按钮置灰并提示，已下载页可按下载时间排序", async ({ page }) => {
+  const gallery = (id: number, title: string) => ({
+    id,
+    title,
+    language: "japanese",
+    type: "manga",
+    files: [{ name: "a.jpg", width: 1, height: 1 }],
+  });
+  const posted: unknown[] = [];
+  const libraryQueries: string[] = [];
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.route("http://hitomi.test/**", async (route) => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    if (path === "/api/v1/events") {
+      await route.fulfill({
+        contentType: "text/event-stream",
+        body: `data: ${JSON.stringify([
+          { id: 30, title: "队列中", state: "running", operation: "download", directory: "", done: 0, total: 1, errors: {} },
+        ])}\n\n`,
+      });
+      return;
+    }
+    if (path === "/api/v1/settings") {
+      await route.fulfill({ json: { downloadDir: "/downloads" } });
+      return;
+    }
+    if (path === "/api/v1/mobile-link") {
+      await route.fulfill({ json: { links: [] } });
+      return;
+    }
+    if (path === "/api/v1/search") {
+      await route.fulfill({
+        json: {
+          session: "s",
+          page: 1,
+          total: 3,
+          items: [
+            { id: 10, gallery: gallery(10, "已经下载的作品") },
+            { id: 20, gallery: gallery(20, "还没下载的作品") },
+            { id: 30, gallery: gallery(30, "已在队列的作品") },
+          ],
+        },
+      });
+      return;
+    }
+    if (/^\/api\/v1\/galleries\/\d+\/related$/.test(path)) {
+      await route.fulfill({ json: { items: [] } });
+      return;
+    }
+    if (path === "/api/v1/library/downloaded") {
+      await route.fulfill({ json: { ids: [10] } });
+      return;
+    }
+    if (path === "/api/v1/downloads" && route.request().method() === "POST") {
+      posted.push(route.request().postDataJSON());
+      await route.fulfill({ json: { ok: true } });
+      return;
+    }
+    if (path === "/api/v1/library") {
+      libraryQueries.push(url.search);
+      await route.fulfill({
+        json: {
+          tags: [],
+          entries: [
+            {
+              id: 10,
+              title: "已经下载的作品",
+              artists: [],
+              tags: [],
+              language: "japanese",
+              type: "manga",
+              pages: 1,
+              directory: "/downloads/10",
+              legacy: false,
+              formats: ["webp"],
+              fallbacks: 0,
+              missing: 0,
+              createdAt: "2026-01-29T14:30:17+09:00",
+            },
+          ],
+          total: 1,
+          legacyTotal: 0,
+          page: 1,
+          pageSize: 50,
+          scan: { state: "completed", root: "/downloads", visited: 1, found: 1, current: "", warnings: [], warningCount: 0 },
+        },
+      });
+      return;
+    }
+    if (path.startsWith("/api/v1/covers/") || path === "/api/v1/library/cover" || path === "/favicon.ico") {
+      await route.fulfill({ status: 404 });
+      return;
+    }
+    const asset = resolve("dist", path === "/" ? "index.html" : path.slice(1));
+    await route.fulfill({
+      contentType: asset.endsWith(".js")
+        ? "application/javascript"
+        : asset.endsWith(".css")
+          ? "text/css"
+          : "text/html",
+      body: await readFile(asset),
+    });
+  });
+  await page.goto("http://hitomi.test/");
+  await page.getByLabel("关键词与标签").fill("x");
+  await page.getByRole("button", { name: "搜索", exact: true }).click();
+  const done = page.getByRole("button", { name: "已下载 #10" });
+  const fresh = page.getByRole("button", { name: "下载 #20" });
+  const queued = page.getByRole("button", { name: "已在下载队列中 #30" });
+  await expect(done).toBeDisabled();
+  await expect(queued).toBeDisabled();
+  await expect(fresh).toBeEnabled();
+  // 置灰していても hover で理由が出る。
+  await done.hover({ force: true });
+  await expect(page.getByRole("tooltip", { name: "已下载" })).toBeVisible();
+  await fresh.click();
+  expect(posted).toEqual([{ id: 20 }]);
+  // 詳細ドロワーの按钮も同様に置灰される。
+  await page.getByText("已经下载的作品", { exact: true }).click();
+  await expect(page.getByRole("dialog").getByRole("button", { name: "已下载" })).toBeDisabled();
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("button", { name: "已下载", exact: true }).first().click();
+  const row = page.locator(".downloaded-row");
+  await expect(row.getByText(/下载于 2026-01-29/)).toBeVisible();
+  await page.getByRole("textbox", { name: "排序方式" }).click();
+  await page.getByRole("option", { name: "下载时间：新→旧" }).click();
+  await expect.poll(() => libraryQueries.some((q) => q.includes("sort=created"))).toBe(true);
+  expect(libraryQueries[0]).toContain("sort=updated");
+  expect(errors).toEqual([]);
+});

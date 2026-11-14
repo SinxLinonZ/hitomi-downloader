@@ -1,8 +1,9 @@
 import { ActionIcon, Group, Paper, Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArrowDown, IconInfoCircle } from "@tabler/icons-react";
+import { IconArrowDown, IconCheck, IconInfoCircle } from "@tabler/icons-react";
 import { api, Gallery } from "./api";
 import { Cover, report, titles } from "./common";
+import { statusHint, useWorkStatus } from "./downloadStatus";
 
 export async function addDownload(id: number | string) {
   try {
@@ -30,6 +31,8 @@ export function GalleryCard({
   onOpen: (g: Gallery) => void;
 }) {
   const { main, sub } = titles(g.title, g.japanese_title);
+  const status = useWorkStatus(id);
+  const hint = statusHint(status);
   return (
     <Paper withBorder className="g-card">
       <Cover
@@ -63,15 +66,23 @@ export function GalleryCard({
                 <IconInfoCircle size={15} />
               </ActionIcon>
             </Tooltip>
-            <Tooltip label="加入下载队列">
-              <ActionIcon
-                variant="light"
-                size="sm"
-                aria-label={`下载 #${id}`}
-                onClick={() => addDownload(id)}
-              >
-                <IconArrowDown size={15} />
-              </ActionIcon>
+            {/* 置灰した按钮は hover を拾えないため、Tooltip の対象は外側の span にする。 */}
+            <Tooltip label={hint ?? "加入下载队列"}>
+              <span>
+                <ActionIcon
+                  variant="light"
+                  size="sm"
+                  aria-label={hint ? `${hint} #${id}` : `下载 #${id}`}
+                  disabled={!!hint}
+                  onClick={() => addDownload(id)}
+                >
+                  {status === "downloaded" ? (
+                    <IconCheck size={15} />
+                  ) : (
+                    <IconArrowDown size={15} />
+                  )}
+                </ActionIcon>
+              </span>
             </Tooltip>
           </Group>
         </div>

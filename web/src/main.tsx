@@ -37,6 +37,7 @@ import {
 import { api, Settings } from "./api";
 import { report } from "./common";
 import { DownloadedPane } from "./DownloadedPane";
+import { DownloadStatusProvider } from "./downloadStatus";
 import { MobileLink } from "./MobileLink";
 import { QueuePane } from "./QueuePane";
 import { SearchPane } from "./SearchPane";
@@ -150,6 +151,7 @@ function App() {
   }[serviceState];
 
   return (
+    <DownloadStatusProvider tasks={tasks}>
     <AppShell
       header={{ height: 64 }}
       navbar={{
@@ -390,6 +392,7 @@ function App() {
         </Stack>
       </Modal>
     </AppShell>
+    </DownloadStatusProvider>
   );
 }
 

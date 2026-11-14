@@ -8,10 +8,12 @@ import {
   Paper,
   Text,
   Title,
+  Tooltip,
 } from "@mantine/core";
 import { IconArrowLeft, IconDownload } from "@tabler/icons-react";
 import { api, Gallery } from "./api";
 import { Cover, errorText, titles } from "./common";
+import { statusHint, useWorkStatus } from "./downloadStatus";
 import { addDownload, GalleryCard } from "./GalleryCard";
 
 // 詳細を開く対象。ローカルの作品は表紙とディレクトリを指定できる。
@@ -150,6 +152,9 @@ function WorkDetail({
 }) {
   const { main, sub } = titles(g.title, g.japanese_title);
   const artists = g.artists?.map((a) => a.artist).join("、");
+  // 本地の作品（directory あり）には下载按钮がないので、状態の問い合わせも不要。
+  const status = useWorkStatus(g.id, !directory);
+  const hint = statusHint(status);
   return (
     <>
       <div className="detail-head">
@@ -202,14 +207,18 @@ function WorkDetail({
         ))}
       </Group>
       {!directory && (
-        <Button
-          fullWidth
-          mt="md"
-          leftSection={<IconDownload size={15} />}
-          onClick={() => addDownload(g.id)}
-        >
-          加入下载队列
-        </Button>
+        <Tooltip label={hint} disabled={!hint}>
+          <div style={{ marginTop: 12 }}>
+            <Button
+              fullWidth
+              leftSection={<IconDownload size={15} />}
+              disabled={!!hint}
+              onClick={() => addDownload(g.id)}
+            >
+              {hint ?? "加入下载队列"}
+            </Button>
+          </div>
+        </Tooltip>
       )}
       <Related id={g.id} onOpen={onOpen} />
     </>

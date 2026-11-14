@@ -419,3 +419,39 @@ func TestConcurrencySettingsPersistAndValidate(t *testing.T) {
 		t.Fatal("rejected request changed the concurrency", tasks, pages)
 	}
 }
+
+func TestDownloadedEndpointAndDuplicateDownloadRejected(t *testing.T) {
+	s := setup(t)
+	dir := filepath.Join(s.Downloads.Root(), "401 - Example")
+	if e := os.MkdirAll(dir, 0755); e != nil {
+		t.Fatal(e)
+	}
+	raw, _ := json.Marshal(map[string]any{"id": 401, "title": "Example", "files": []map[string]string{{"name": "page.png", "hash": strings.Repeat("a", 64)}}})
+	if e := os.WriteFile(filepath.Join(dir, "metadata.json"), raw, 0600); e != nil {
+		t.Fatal(e)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if page, _ := s.Downloads.Library(1, 20, "", "all"); page.Scan.State == "completed" {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if w := call(s, "GET", "/api/v1/library/downloaded?id=401&id=402", "", "", false); w.Code != 401 {
+		t.Fatalf("requires session: %d", w.Code)
+	}
+	w := call(s, "GET", "/api/v1/library/downloaded?id=401&id=402&id=x", "", "", true)
+	var found struct {
+		IDs []int `json:"ids"`
+	}
+	if e := json.Unmarshal(w.Body.Bytes(), &found); e != nil || len(found.IDs) != 1 || found.IDs[0] != 401 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	w = call(s, "POST", "/api/v1/downloads", `{"id":401}`, "", true)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "ALREADY_DOWNLOADED") {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if len(s.Downloads.List()) != 0 {
+		t.Fatal("duplicate download created a task")
+	}
+}

@@ -56,6 +56,8 @@ type Task struct {
 	Errors    map[int]string `json:"errors"`
 	Error     string         `json:"error,omitempty"`
 	UpdatedAt time.Time      `json:"updatedAt"`
+	// キューに入れた時刻。進捗では変わらないため、一覧の並び順の安定したキーになる。
+	QueuedAt time.Time `json:"queuedAt,omitempty"`
 }
 type Entry struct {
 	Tags          []Tag     `json:"tags"`
@@ -74,6 +76,8 @@ type Entry struct {
 	Directory     string    `json:"directory"`
 	Pages         int       `json:"pages"`
 	UpdatedAt     time.Time `json:"updatedAt"`
+	// 作品ディレクトリの作成時刻（＝ダウンロード時刻）。
+	CreatedAt time.Time `json:"createdAt"`
 }
 type Manager struct {
 	mu      sync.Mutex
@@ -247,12 +251,57 @@ func (m *Manager) List() []Task {
 		}
 		out = append(out, v)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt.After(out[j].UpdatedAt) })
+	sortTasks(out)
 	return out
+}
+
+// 進捗で変わる UpdatedAt を主キーにすると実行中の行が毎秒入れ替わるため、
+// 状態の段階 → キュー投入順 → ID の、進捗に影響されない順で並べる。
+func sortTasks(tasks []Task) {
+	rank := func(state string) int {
+		switch state {
+		case "running":
+			return 0
+		case "queued":
+			return 1
+		case "completed":
+			return 3
+		}
+		return 2
+	}
+	// 旧バージョンの task には QueuedAt がないため、UpdatedAt で代用する。
+	at := func(t Task) time.Time {
+		if t.QueuedAt.IsZero() {
+			return t.UpdatedAt
+		}
+		return t.QueuedAt
+	}
+	sort.Slice(tasks, func(i, j int) bool {
+		a, b := tasks[i], tasks[j]
+		if ra, rb := rank(a.State), rank(b.State); ra != rb {
+			return ra < rb
+		}
+		ta, tb := at(a), at(b)
+		if !ta.Equal(tb) {
+			// 実行待ちは先に入れた順、それ以外は新しい順。
+			if rank(a.State) <= 1 {
+				return ta.Before(tb)
+			}
+			return ta.After(tb)
+		}
+		return a.ID < b.ID
+	})
 }
 func (m *Manager) Start(id int, dir, op string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// 新規ダウンロードは、すでに本地库にある作品を二重に取りに行かない（補全は検証で行う）。
+	// 索引は走査の途中でもよい。見つかったものは確実に存在する。
+	if op == "download" && dir == "" {
+		if d, ok := existingDirs(m.indexedDirs([]int{id}, m.root))[id]; ok {
+			return &AlreadyDownloadedError{ID: id, Directory: d}
+		}
+	}
 	return m.startLocked(id, dir, op)
 }
 
@@ -293,6 +342,7 @@ func (m *Manager) startLocked(id int, dir, op string) error {
 	t.Error = ""
 	t.Warning = ""
 	t.UpdatedAt = time.Now()
+	t.QueuedAt = t.UpdatedAt
 	if e := m.save(t); e != nil {
 		t.State = "failed"
 		return e

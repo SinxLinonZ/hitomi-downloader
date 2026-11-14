@@ -52,6 +52,7 @@ export type TaskBatchResult = {
 export type Entry = {
   tags: { name: string; namespace: string }[];
   updatedAt?: string;
+  createdAt?: string;
   legacy: boolean;
   artists: string[];
   language: string;
