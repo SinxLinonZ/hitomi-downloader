@@ -36,6 +36,7 @@ async function setup(page: Page) {
       ];
       if (q) entries = entries.filter((e) => e.title.toLowerCase().includes(q.toLowerCase()));
       if (tags.length) entries = entries.slice(0, 1);
+      if (url.searchParams.get("sort") === "created-asc") entries.reverse();
       await route.fulfill({
         json: {
           entries,
@@ -66,6 +67,10 @@ async function setup(page: Page) {
     }
     if (path.endsWith("/cover")) {
       await route.fulfill({ contentType: "image/svg+xml", body: svg("C", "#475569") });
+      return;
+    }
+    if (path === "/other") {
+      await route.fulfill({ contentType: "text/html", body: "<p>other</p>" });
       return;
     }
     if (path === "/favicon.ico") {
@@ -156,5 +161,97 @@ test("翻页模式：点击左右翻页，可切换右开", async ({ page }) => 
   await expect(viewer.locator(".v-bottom.v-hidden")).toHaveCount(1);
   await page.mouse.click(195, 420);
   await expect(viewer.locator(".v-bottom.v-hidden")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+// 「返回」は同じページ内で完結し、再読み込みや離脱を起こさない。
+async function mark(page: Page) {
+  await page.evaluate(() => ((window as unknown as { __alive: number }).__alive = 1));
+}
+const alive = (page: Page) => page.evaluate(() => (window as unknown as { __alive?: number }).__alive === 1);
+
+test("返回：应用内按钮和浏览器返回都回到列表，且不重载页面", async ({ page }) => {
+  const { errors } = await setup(page);
+  await page.goto("http://hitomi.test/reader");
+  await mark(page);
+  const viewer = page.getByRole("dialog", { name: "阅览" });
+  await page.getByRole("button", { name: "アルファ" }).click();
+  await expect(viewer).toBeVisible();
+  await viewer.getByRole("button", { name: "返回列表" }).click();
+  await expect(viewer).toHaveCount(0);
+  expect(await alive(page)).toBe(true);
+
+  await page.getByRole("button", { name: "Beta" }).click();
+  await expect(viewer).toBeVisible();
+  await page.goBack();
+  await expect(viewer).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Beta" })).toBeVisible();
+  expect(await alive(page)).toBe(true);
+  expect(page.url()).not.toContain("#/w/");
+  expect(errors).toEqual([]);
+});
+
+test("返回：刷新后或直接用链接打开作品时，返回按钮回到列表而不是离开页面", async ({ page }) => {
+  const { errors } = await setup(page);
+  await page.goto("http://hitomi.test/reader");
+  await page.getByRole("button", { name: "アルファ" }).click();
+  const viewer = page.getByRole("dialog", { name: "阅览" });
+  await expect(viewer).toBeVisible();
+  // 浏览器刷新后，历史里仍有上一条记录，但那条属于已销毁的文档。
+  await page.reload();
+  await expect(viewer).toBeVisible();
+  await mark(page);
+  await viewer.getByRole("button", { name: "返回列表" }).click();
+  await expect(viewer).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Beta" })).toBeVisible();
+  expect(await alive(page)).toBe(true);
+  expect(page.url()).not.toContain("#/w/");
+  expect(errors).toEqual([]);
+});
+
+test("返回：浏览器返回键先关闭筛选抽屉，而不是离开页面", async ({ page }) => {
+  const { errors } = await setup(page);
+  await page.goto("http://hitomi.test/reader");
+  await mark(page);
+  await page.getByRole("button", { name: "筛选", exact: true }).click();
+  const drawer = page.getByRole("dialog", { name: "按标签筛选" });
+  await expect(drawer).toBeVisible();
+  await page.goBack();
+  await expect(drawer).toHaveCount(0);
+  expect(await alive(page)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("返回：通过链接直接打开作品时，返回按钮留在阅读页并显示列表", async ({ page }) => {
+  const { errors } = await setup(page);
+  // 先访问别的页面，使历史里有一条不属于阅读页的记录。
+  await page.goto("http://hitomi.test/other");
+  await page.goto("http://hitomi.test/reader#/w/1");
+  const viewer = page.getByRole("dialog", { name: "阅览" });
+  await expect(viewer).toBeVisible();
+  await mark(page);
+  await viewer.getByRole("button", { name: "返回列表" }).click();
+  await expect(viewer).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Beta" })).toBeVisible();
+  expect(page.url()).toBe("http://hitomi.test/reader");
+  expect(await alive(page)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("排序：可切换并记住下载时间排序，查询带上 sort", async ({ page }) => {
+  const { requests, errors } = await setup(page);
+  await page.goto("http://hitomi.test/reader");
+  const order = () => page.locator(".r-card .r-title").allTextContents();
+  await expect(page.getByRole("button", { name: "Beta" })).toBeVisible();
+  // 既定は最近下载（新→旧）。
+  expect(requests.some((u) => u.pathname.endsWith("/library") && u.searchParams.get("sort") === "created")).toBe(true);
+  expect(await order()).toEqual(["アルファ", "Beta", "Gamma"]);
+  await page.getByLabel("排序方式").selectOption("created-asc");
+  await expect.poll(order).toEqual(["Gamma", "Beta", "アルファ"]);
+  expect(requests.some((u) => u.searchParams.get("sort") === "created-asc")).toBe(true);
+  // 刷新后仍保持所选排序。
+  await page.reload();
+  await expect(page.getByLabel("排序方式")).toHaveValue("created-asc");
+  await expect.poll(order).toEqual(["Gamma", "Beta", "アルファ"]);
   expect(errors).toEqual([]);
 });

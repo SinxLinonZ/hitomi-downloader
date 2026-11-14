@@ -128,7 +128,7 @@ func (s *Server) registerReader(mux *http.ServeMux) {
 		if size < 1 || size > 60 {
 			size = 30
 		}
-		result, e := s.Downloads.ReaderLibrary(pageNo, size, q.Get("q"), q["tag"]...)
+		result, e := s.Downloads.ReaderLibrary(pageNo, size, q.Get("q"), q.Get("sort"), q["tag"]...)
 		if e != nil {
 			fail(w, e)
 			return

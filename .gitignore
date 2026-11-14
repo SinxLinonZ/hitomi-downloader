@@ -8,3 +8,4 @@
 /web/*.tsbuildinfo
 /web/test-results/
 /web/playwright-report/
+/hitomi-downloader.prev

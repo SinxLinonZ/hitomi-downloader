@@ -28,7 +28,11 @@ body {
   background: var(--bg);
 }
 .r-summary {
-  min-height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
   padding: 0 2px 6px;
   font-size: 13px;
   color: var(--dim);

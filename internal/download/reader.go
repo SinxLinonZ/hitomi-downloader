@@ -47,8 +47,9 @@ func readerEntry(e Entry) ReaderEntry {
 }
 
 // ReaderLibrary は「已下载」と同じ検索・タグ絞り込みを、閲覧用の項目だけ返す形で提供する。
-func (m *Manager) ReaderLibrary(page, size int, q string, tags ...string) (ReaderLibraryPage, error) {
-	result, e := m.Library(page, size, q, "all", tags...)
+// sortBy は LibrarySorted と同じ（created / created-asc / それ以外は更新が新しい順）。
+func (m *Manager) ReaderLibrary(page, size int, q, sortBy string, tags ...string) (ReaderLibraryPage, error) {
+	result, e := m.LibrarySorted(page, size, q, "all", sortBy, tags...)
 	if e != nil {
 		return ReaderLibraryPage{}, e
 	}

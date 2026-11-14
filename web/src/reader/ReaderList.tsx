@@ -6,13 +6,14 @@ import {
   Group,
   Indicator,
   Loader,
+  NativeSelect,
   Text,
   TextInput,
 } from "@mantine/core";
 import { useDebouncedValue } from "@mantine/hooks";
 import { IconAdjustmentsHorizontal, IconSearch, IconX } from "@tabler/icons-react";
 import { api } from "../api";
-import { loadProgress } from "./progress";
+import { loadProgress, loadSort, saveSort, SORT_OPTIONS, SortKey } from "./progress";
 import type { ReaderEntry, ReaderLibrary } from "./types";
 
 const PAGE_SIZE = 30;
@@ -24,9 +25,15 @@ const tagValue = (t: { name: string; namespace: string }) =>
 export function ReaderList({
   onOpen,
   progressRevision,
+  filterOpen,
+  onFilterOpen,
+  onFilterClose,
 }: {
   onOpen: (id: number) => void;
   progressRevision: number;
+  filterOpen: boolean;
+  onFilterOpen: () => void;
+  onFilterClose: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [q] = useDebouncedValue(query, 300);
@@ -37,7 +44,7 @@ export function ReaderList({
   const [meta, setMeta] = useState<Pick<ReaderLibrary, "total" | "found" | "scanning" | "tags">>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [filterOpen, setFilterOpen] = useState(false);
+  const [sort, setSort] = useState<SortKey>(loadSort);
   const [tagQuery, setTagQuery] = useState("");
   const sentinel = useRef<HTMLDivElement>(null);
   const progress = useMemo(() => loadProgress(), [progressRevision, entries]);
@@ -46,7 +53,7 @@ export function ReaderList({
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE), q });
+    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE), q, sort });
     for (const tag of selected) params.append("tag", tag);
     api<ReaderLibrary>(`/reader/library?${params}`, undefined, undefined, controller.signal)
       .then((r) => {
@@ -71,7 +78,7 @@ export function ReaderList({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [q, selected, page, revision]);
+  }, [q, selected, sort, page, revision]);
 
   const hasMore = !!meta && entries.length < meta.total;
   // 末尾が見えたら次のページを読み込む。
@@ -121,21 +128,37 @@ export function ReaderList({
           }}
         />
         <Indicator label={selected.length} size={16} disabled={selected.length === 0} color="teal">
-          <ActionIcon size={42} variant="default" aria-label="筛选" onClick={() => setFilterOpen(true)}>
+          <ActionIcon size={42} variant="default" aria-label="筛选" onClick={onFilterOpen}>
             <IconAdjustmentsHorizontal size={20} />
           </ActionIcon>
         </Indicator>
       </div>
       <div className="r-summary">
-        {meta ? (
-          <>
-            {meta.scanning ? "已发现" : "共"} {meta.found.toLocaleString()} 部
-            {meta.total !== meta.found && ` · 筛选结果 ${meta.total.toLocaleString()} 部`}
-            {meta.scanning && <Loader size={12} ml={8} />}
-          </>
-        ) : (
-          loading && <Loader size={12} />
-        )}
+        <span>
+          {meta ? (
+            <>
+              {meta.scanning ? "已发现" : "共"} {meta.found.toLocaleString()} 部
+              {meta.total !== meta.found && ` · 筛选结果 ${meta.total.toLocaleString()} 部`}
+              {meta.scanning && <Loader size={12} ml={8} />}
+            </>
+          ) : (
+            loading && <Loader size={12} />
+          )}
+        </span>
+        {/* 手机ではネイティブの選択ダイアログが最も操作しやすい。 */}
+        <NativeSelect
+          aria-label="排序方式"
+          size="xs"
+          value={sort}
+          data={SORT_OPTIONS}
+          onChange={(e) => {
+            const next = e.currentTarget.value as SortKey;
+            setSort(next);
+            saveSort(next);
+            setPage(1);
+            window.scrollTo({ top: 0 });
+          }}
+        />
       </div>
       {selected.length > 0 && (
         <div className="r-chips">
@@ -181,7 +204,7 @@ export function ReaderList({
       <div ref={sentinel} className="r-more">
         {loading && entries.length > 0 && <Loader size="sm" />}
       </div>
-      <Drawer opened={filterOpen} onClose={() => setFilterOpen(false)} position="bottom" size="75%" title="按标签筛选" padding="md">
+      <Drawer opened={filterOpen} onClose={onFilterClose} position="bottom" size="75%" title="按标签筛选" padding="md">
         <Text size="sm" c="dimmed" mb="xs">
           选择多个标签时，需同时满足。
         </Text>
@@ -210,7 +233,7 @@ export function ReaderList({
             </Text>
           )}
         </Group>
-        <Button fullWidth mt="lg" onClick={() => setFilterOpen(false)}>
+        <Button fullWidth mt="lg" onClick={onFilterClose}>
           查看 {meta?.total.toLocaleString() ?? 0} 部作品
         </Button>
       </Drawer>
